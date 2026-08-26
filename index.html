@@ -1,0 +1,451 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <title>词汇学习 · Vocab Trainer</title>
+  <!-- PWA / iOS home-screen app -->
+  <link rel="manifest" href="manifest.webmanifest" />
+  <meta name="theme-color" content="#3b6ef6" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-title" content="词汇学习" />
+  <link rel="apple-touch-icon" href="icons/apple-touch-icon.png" />
+  <script>
+    // Set the theme before first paint to avoid a flash of the wrong colors.
+    (function () {
+      try {
+        var s = JSON.parse(localStorage.getItem("vocab-trainer:v1") || "{}");
+        var t = s.settings && s.settings.theme;
+        if (t !== "light" && t !== "dark") {
+          t = window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+        }
+        document.documentElement.setAttribute("data-theme", t);
+      } catch (e) {}
+    })();
+  </script>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <span class="logo">📘</span>
+      <span>词汇学习 · <em>Vocab Trainer</em></span>
+    </div>
+    <nav class="tabs" id="tabs">
+      <button class="tab active" data-view="home">概览</button>
+      <button class="tab" data-view="flashcard">卡片</button>
+      <button class="tab" data-view="quiz">选择题</button>
+      <button class="tab" data-view="spell">拼写</button>
+      <button class="tab" data-view="dict">听写</button>
+      <button class="tab" data-view="speak">口语</button>
+      <button class="tab" data-view="read">阅读</button>
+      <button class="tab" data-view="grammar">句式解析</button>
+      <button class="tab" data-view="write">写作</button>
+      <button class="tab" data-view="browse">词表</button>
+      <button class="tab" data-view="import">导入</button>
+    </nav>
+    <button class="theme-toggle" id="themeToggle" title="切换深色模式">🌙</button>
+  </header>
+
+  <div class="layout">
+    <aside class="sidebar">
+      <div class="side-title">分类</div>
+      <div class="side-hint">点名称单选 · 勾选可多选</div>
+      <ul class="cat-list" id="catList"></ul>
+      <div class="side-actions">
+        <button class="btn ghost small" id="clearAllBtn">清空全部数据</button>
+      </div>
+    </aside>
+
+    <main class="content">
+      <!-- HOME / OVERVIEW -->
+      <section class="view active" id="view-home">
+        <div class="today-panel" id="todayPanel" hidden></div>
+        <div class="stats-grid" id="statsGrid"></div>
+        <div class="goal-panel" id="goalPanel" hidden>
+          <div class="goal-head">
+            <span class="goal-streak" id="goalStreak">🔥 0 天连续</span>
+            <label class="goal-set">每日目标
+              <input type="number" id="goalInput" min="1" max="500" step="5" />
+              <span>次复习</span>
+            </label>
+          </div>
+          <div class="goal-bar"><div class="goal-fill" id="goalFill"></div></div>
+          <div class="goal-text" id="goalText"></div>
+        </div>
+        <div class="chart-panel" id="chartPanel" hidden>
+          <div class="chart-title">最近 14 天复习量</div>
+          <div class="chart" id="chart"></div>
+        </div>
+        <div class="skill-panel" id="skillPanel" hidden>
+          <div class="chart-title">听说读写 · 四维能力</div>
+          <div class="skills" id="skillsGrid"></div>
+          <div class="skill-tip muted" id="skillTip"></div>
+        </div>
+        <div class="chart-panel" id="memPanel" hidden></div>
+        <div class="chart-panel" id="heatmapPanel" hidden></div>
+        <div class="chart-panel" id="forecastPanel" hidden></div>
+        <div class="chart-panel" id="badgePanel" hidden></div>
+        <div class="home-empty" id="homeEmpty">
+          <h2>还没有词汇</h2>
+          <p>一键载入内置示例词库，或去<b>导入</b>页面粘贴你自己的词汇 / 语句（支持 Markdown 表格、CSV、TSV 和纯文本）。</p>
+          <div class="sample-list" id="sampleListHome"></div>
+          <button class="btn ghost" data-goto="import" style="margin-top:12px">导入自己的词汇</button>
+        </div>
+        <div class="home-actions" id="homeActions" hidden>
+          <h2>今天学点什么？</h2>
+          <div class="quick-cards">
+            <button class="quick-card" data-goto="flashcard">
+              <span class="qc-emoji">🃏</span>
+              <span class="qc-title">卡片复习</span>
+              <span class="qc-sub" id="dueCount">0 张待复习</span>
+            </button>
+            <button class="quick-card" id="hardQuick">
+              <span class="qc-emoji">🔥</span>
+              <span class="qc-title">攻克难词</span>
+              <span class="qc-sub" id="hardCount">按易错程度排序</span>
+            </button>
+            <button class="quick-card" data-goto="quiz">
+              <span class="qc-emoji">✅</span>
+              <span class="qc-title">选择题</span>
+              <span class="qc-sub">中英互测</span>
+            </button>
+            <button class="quick-card" data-goto="spell">
+              <span class="qc-emoji">⌨️</span>
+              <span class="qc-title">拼写练习</span>
+              <span class="qc-sub">看中文写英文</span>
+            </button>
+            <button class="quick-card" id="dictQuick" data-goto="dict">
+              <span class="qc-emoji">🎧</span>
+              <span class="qc-title">听写练习</span>
+              <span class="qc-sub">听发音写内容</span>
+            </button>
+            <button class="quick-card" id="speakQuick" data-goto="speak">
+              <span class="qc-emoji">🗣️</span>
+              <span class="qc-title">口语跟读</span>
+              <span class="qc-sub">朗读并自动评分</span>
+            </button>
+            <button class="quick-card" data-goto="read">
+              <span class="qc-emoji">📄</span>
+              <span class="qc-title">文档阅读</span>
+              <span class="qc-sub">粘贴文档 · 术语高亮/挖空</span>
+            </button>
+            <button class="quick-card" data-goto="write">
+              <span class="qc-emoji">✍️</span>
+              <span class="qc-title">写作练习</span>
+              <span class="qc-sub">中译英 + 邮件/会议模板</span>
+            </button>
+          </div>
+        </div>
+      </section>
+
+      <!-- FLASHCARD -->
+      <section class="view" id="view-flashcard">
+        <div class="study-bar">
+          <div class="study-progress"><span id="fcProgress">0 / 0</span></div>
+          <label class="chk"><input type="checkbox" id="fcDueOnly" /> 只看待复习</label>
+          <label class="chk"><input type="checkbox" id="fcHard" /> 难词优先</label>
+          <label class="chk"><input type="checkbox" id="fcReverse" /> 中→英</label>
+          <label class="chk"><input type="checkbox" id="fcAutoSpeak" /> 自动朗读</label>
+          <button class="btn ghost small" id="fcSpeak" title="朗读英文">🔊 朗读</button>
+          <select id="ttsVoice" class="mini-select" title="选择发音"></select>
+          <label class="chk">语速 <input type="range" id="ttsRate" min="0.6" max="1.3" step="0.05" /></label>
+          <button class="btn ghost small" id="fcRestart">重新开始</button>
+          <span class="kbd-hint">空格翻面 · 1-4 评分</span>
+        </div>
+        <div class="card-stage" id="fcStage">
+          <div class="flashcard" id="flashcard">
+            <div class="fc-face fc-front" id="fcFront"></div>
+            <div class="fc-face fc-back" id="fcBack"></div>
+          </div>
+          <div class="fc-hint" id="fcHint">点击卡片翻面</div>
+        </div>
+        <div class="fc-controls" id="fcControls" hidden>
+          <button class="btn grade grade-again" data-grade="0">忘记</button>
+          <button class="btn grade grade-hard" data-grade="1">困难</button>
+          <button class="btn grade grade-good" data-grade="2">记得</button>
+          <button class="btn grade grade-easy" data-grade="3">简单</button>
+        </div>
+        <div class="study-done" id="fcDone" hidden></div>
+      </section>
+
+      <!-- QUIZ -->
+      <section class="view" id="view-quiz">
+        <div class="study-bar">
+          <div class="study-progress"><span id="qzProgress">0 / 0</span></div>
+          <div class="study-score">得分 <b id="qzScore">0</b></div>
+          <label class="chk"><input type="checkbox" id="qzReverse" /> 中→英</label>
+          <button class="btn ghost small" id="qzRestart">重新开始</button>
+          <span class="kbd-hint">按 1-4 选择</span>
+        </div>
+        <div class="quiz-stage" id="qzStage">
+          <div class="quiz-prompt" id="qzPrompt"></div>
+          <div class="quiz-options" id="qzOptions"></div>
+        </div>
+        <div class="study-done" id="qzDone" hidden></div>
+      </section>
+
+      <!-- SPELLING -->
+      <section class="view" id="view-spell">
+        <div class="study-bar">
+          <div class="study-progress"><span id="spProgress">0 / 0</span></div>
+          <div class="study-score">正确 <b id="spScore">0</b></div>
+          <button class="btn ghost small" id="spRestart">重新开始</button>
+        </div>
+        <div class="spell-stage" id="spStage">
+          <div class="spell-prompt" id="spPrompt"></div>
+          <div class="spell-example" id="spExample"></div>
+          <input type="text" class="spell-input" id="spInput" placeholder="输入英文后回车" autocomplete="off" spellcheck="false" />
+          <div class="spell-feedback" id="spFeedback"></div>
+          <button class="btn primary" id="spSubmit">提交</button>
+        </div>
+        <div class="study-done" id="spDone" hidden></div>
+      </section>
+
+      <!-- DICTATION -->
+      <section class="view" id="view-dict">
+        <div class="study-bar">
+          <div class="study-progress"><span id="dtProgress">0 / 0</span></div>
+          <div class="study-score">正确 <b id="dtScore">0</b></div>
+          <label class="chk"><input type="radio" name="dtMode" value="word" checked /> 单词</label>
+          <label class="chk"><input type="radio" name="dtMode" value="sentence" /> 例句</label>
+          <label class="chk"><input type="checkbox" id="dtShowCn" /> 显示中文提示</label>
+          <button class="btn ghost small" id="dtRestart">重新开始</button>
+          <span class="kbd-hint">回车提交 / 下一个</span>
+        </div>
+        <div class="dict-stage" id="dtStage">
+          <div class="dict-controls">
+            <button class="btn primary dict-play" id="dtPlay">🔊 播放</button>
+            <button class="btn" id="dtReplay">重播</button>
+            <button class="btn" id="dtSlow">🐢 慢速</button>
+          </div>
+          <div class="dict-hint" id="dtHint"></div>
+          <input type="text" class="spell-input" id="dtInput" placeholder="输入你听到的内容后回车" autocomplete="off" spellcheck="false" />
+          <div class="spell-feedback" id="dtFeedback"></div>
+          <button class="btn primary" id="dtSubmit">提交</button>
+        </div>
+        <div class="study-done" id="dtDone" hidden></div>
+      </section>
+
+      <!-- SPEAKING -->
+      <section class="view" id="view-speak">
+        <div class="study-bar">
+          <div class="study-progress"><span id="spkProgress">0 / 0</span></div>
+          <div class="study-score">平均分 <b id="spkAvg">0</b></div>
+          <label class="chk"><input type="radio" name="spkMode" value="word" checked /> 单词</label>
+          <label class="chk"><input type="radio" name="spkMode" value="sentence" /> 例句</label>
+          <button class="btn ghost small" id="spkRestart">重新开始</button>
+        </div>
+        <div class="speak-stage" id="spkStage">
+          <div class="speak-prompt" id="spkPrompt"></div>
+          <div class="speak-cn" id="spkCn"></div>
+          <div class="dict-controls">
+            <button class="btn" id="spkPlay">🔊 范读</button>
+            <button class="btn primary spk-mic" id="spkMic">🎤 点击朗读</button>
+          </div>
+          <div class="speak-heard" id="spkHeard"></div>
+          <div class="speak-result" id="spkResult"></div>
+          <button class="btn primary" id="spkNext" hidden>下一个</button>
+        </div>
+        <div class="study-done" id="spkDone" hidden></div>
+      </section>
+
+      <!-- READING -->
+      <section class="view" id="view-read">
+        <h2>文档阅读 · 全球规则原文库</h2>
+        <p class="muted">内置 88 份全球交易所 / 清算规则<b>全文</b>（按交易所 → 文档 → 分段选择）。自动高亮词库术语（悬停看释义、点击朗读）；「🔊 朗读本段」可整段听力；「挖空模式」做填空回忆。也可自行粘贴英文分析。</p>
+        <div class="import-actions read-search">
+          <input type="search" id="rdSearch" class="search" placeholder="全库搜索：输入词 / 短语，如 settlement date、buy-in、margin call…" />
+          <button class="btn primary" id="rdSearchBtn">搜索全库</button>
+          <span class="import-msg" id="rdSearchMsg"></span>
+        </div>
+        <div class="read-results" id="rdResults" hidden></div>
+        <div class="import-actions read-picker">
+          <select id="rdDocSel" class="mini-select" title="选择文档"></select>
+          <select id="rdPartSel" class="mini-select" title="选择分段"></select>
+        </div>
+        <textarea id="rdText" class="import-text" placeholder="在此粘贴英文文档段落，或从上方选择内置规则文档…"></textarea>
+        <div class="import-actions">
+          <button class="btn primary" id="rdAnalyze">分析</button>
+          <button class="btn" id="rdSpeak">🔊 朗读本段</button>
+          <button class="btn" id="rdStop" hidden>⏹ 停止</button>
+          <label class="chk"><input type="checkbox" id="rdCloze" /> 挖空模式</label>
+          <span class="import-msg" id="rdMsg"></span>
+        </div>
+        <div class="read-output" id="rdOutput" hidden></div>
+      </section>
+
+      <!-- GRAMMAR -->
+      <section class="view" id="view-grammar">
+        <h2>句式解析 · 规则英语语法拆解</h2>
+        <p class="muted">先看「核心句式」掌握规则英语反复出现的 8 类结构，再逐句看「主干 + 拆解 + 语法点」。点 🔊 可朗读整句。举一反三，读懂一句就读懂一类。</p>
+        <div class="seg" id="grammarSeg">
+          <button class="seg-btn active" data-gsub="patterns">核心句式</button>
+          <button class="seg-btn" data-gsub="items">逐句拆解</button>
+          <button class="seg-btn" data-gsub="quiz">语法自测</button>
+        </div>
+        <div id="gsub-patterns"></div>
+        <div id="gsub-items" hidden></div>
+        <div id="gsub-quiz" hidden>
+          <div class="study-bar">
+            <div class="study-progress"><span id="gqProgress">0 / 0</span></div>
+            <div class="study-score">得分 <b id="gqScore">0</b></div>
+            <button class="btn ghost small" id="gqRestart">重新开始</button>
+            <span class="kbd-hint">不看修饰找主干 · 中英对应</span>
+          </div>
+          <div class="quiz-stage" id="gqStage">
+            <div class="quiz-prompt" id="gqPrompt"></div>
+            <div class="quiz-options" id="gqOptions"></div>
+            <div class="gq-explain" id="gqExplain" hidden></div>
+            <button class="btn primary" id="gqNext" hidden>下一题</button>
+          </div>
+          <div class="study-done" id="gqDone" hidden></div>
+        </div>
+      </section>
+
+      <!-- WRITING -->
+      <section class="view" id="view-write">
+        <div class="seg" id="writeSeg">
+          <button class="seg-btn active" data-wsub="compose">造句练习</button>
+          <button class="seg-btn" data-wsub="templates">写作模板</button>
+        </div>
+
+        <div id="wsub-compose">
+          <div class="study-bar">
+            <div class="study-progress"><span id="wrProgress">0 / 0</span></div>
+            <button class="btn ghost small" id="wrRestart">重新开始</button>
+            <span class="kbd-hint">中译英 · 写完对照参考答案</span>
+          </div>
+          <div class="write-stage" id="wrStage">
+            <div class="write-cn" id="wrCn"></div>
+            <textarea id="wrInput" class="import-text" placeholder="用英文写出来…"></textarea>
+            <div class="import-actions">
+              <button class="btn primary" id="wrShow">显示参考答案</button>
+            </div>
+            <div class="write-ref" id="wrRef" hidden></div>
+            <div class="write-grade" id="wrGrade" hidden>
+              <span class="muted">你写得如何？</span>
+              <button class="btn" data-wknow="0">不会</button>
+              <button class="btn" data-wknow="1">基本会</button>
+              <button class="btn" data-wknow="2">熟练</button>
+            </div>
+          </div>
+          <div class="study-done" id="wrDone" hidden></div>
+        </div>
+
+        <div id="wsub-templates" hidden>
+          <div class="tpl-cats" id="tplCats"></div>
+          <div class="tpl-list" id="tplList"></div>
+        </div>
+      </section>
+
+      <!-- BROWSE -->
+      <section class="view" id="view-browse">
+        <div class="browse-bar">
+          <input type="search" class="search" id="browseSearch" placeholder="搜索英文 / 中文…" />
+          <span class="browse-count" id="browseCount"></span>
+        </div>
+        <div class="table-wrap">
+          <table class="vocab-table">
+            <thead>
+              <tr><th>English</th><th>中文</th><th>例句</th><th>状态</th><th></th></tr>
+            </thead>
+            <tbody id="browseBody"></tbody>
+          </table>
+        </div>
+      </section>
+
+      <!-- IMPORT -->
+      <section class="view" id="view-import">
+        <div class="sample-box" id="sampleBox">
+          <div class="backup-title">内置示例词库</div>
+          <p class="muted">不想准备素材？一键载入内置的券商 IT 英语词库，立即开始学习。</p>
+          <div class="sample-list" id="sampleList"></div>
+        </div>
+
+        <h2>导入词汇 / 语句</h2>
+        <p class="muted">支持 <b>Markdown 表格</b>（如 <code>English | 中文释义 | 例句</code>）、<b>CSV</b>、<b>TSV</b>、以及每行一条的<b>纯文本</b>。可粘贴内容，或选择 <code>.md / .csv / .txt</code> 文件。</p>
+
+        <div class="import-controls">
+          <label class="field">
+            <span>格式</span>
+            <select id="impFormat">
+              <option value="auto">自动识别</option>
+              <option value="markdown">Markdown 表格</option>
+              <option value="csv">CSV（逗号分隔）</option>
+              <option value="tsv">TSV（制表符分隔）</option>
+              <option value="text">纯文本（分隔符：英文 = 中文）</option>
+            </select>
+          </label>
+          <label class="field">
+            <span>默认分类</span>
+            <input type="text" id="impCategory" placeholder="如：交易术语（Markdown 会用标题名）" />
+          </label>
+          <label class="field file-field">
+            <span>选择文件</span>
+            <input type="file" id="impFile" accept=".md,.markdown,.csv,.tsv,.txt,text/*" />
+          </label>
+        </div>
+
+        <textarea id="impText" class="import-text" placeholder="在此粘贴内容……
+
+示例（Markdown）：
+| English | 中文释义 | 例句 |
+|---------|---------|------|
+| order | 订单 | The client submitted a buy order. |
+
+示例（纯文本）：
+order = 订单
+settlement = 结算"></textarea>
+
+        <div class="import-actions">
+          <button class="btn primary" id="impPreviewBtn">预览</button>
+          <button class="btn" id="impConfirmBtn" disabled>确认导入</button>
+          <label class="chk"><input type="checkbox" id="impReplace" /> 导入前先清空同名分类</label>
+          <span class="import-msg" id="impMsg"></span>
+        </div>
+
+        <div class="backup-box">
+          <div class="backup-title">备份与恢复</div>
+          <p class="muted">导出会把全部词汇、每词的间隔重复进度，<b>以及连续天数、复习量、四维看板等统计和设置</b>一并保存为 JSON。恢复时：勾选"覆盖"会完整还原（含统计与设置，适合换设备）；默认"合并"只新增词条、不改动现有统计。</p>
+          <div class="import-actions">
+            <button class="btn" id="exportBtn">导出备份 (JSON)</button>
+            <label class="btn file-btn">恢复备份
+              <input type="file" id="restoreFile" accept=".json,application/json" hidden />
+            </label>
+            <label class="chk"><input type="checkbox" id="restoreReplace" /> 覆盖现有数据（默认合并）</label>
+            <span class="import-msg" id="backupMsg"></span>
+          </div>
+        </div>
+
+        <div class="backup-box">
+          <div class="backup-title">导出难词（易错优先）</div>
+          <p class="muted">把错误次数大于 0 的词导出，方便集中攻克，或导入 Anki 制卡（CSV 为 <code>正面,背面</code> 两列，无表头）。</p>
+          <div class="import-actions">
+            <button class="btn" id="exportHardMd">导出 Markdown</button>
+            <button class="btn" id="exportHardCsv">导出 CSV（Anki）</button>
+            <span class="import-msg" id="hardMsg"></span>
+          </div>
+        </div>
+
+        <div class="preview-wrap" id="impPreviewWrap" hidden>
+          <div class="preview-head">预览（<span id="impPreviewCount">0</span> 条）</div>
+          <div class="table-wrap">
+            <table class="vocab-table">
+              <thead><tr><th>English</th><th>中文</th><th>例句</th><th>分类</th></tr></thead>
+              <tbody id="impPreviewBody"></tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <script src="corpus.js"></script>
+  <script src="grammar.js"></script>
+  <script src="samples.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>

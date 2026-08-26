@@ -1,0 +1,17 @@
+{
+  "name": "词汇学习 · Vocab Trainer",
+  "short_name": "词汇学习",
+  "description": "证券 IT 职业英语训练：听说读写、间隔重复、离线可用。",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#0f1319",
+  "theme_color": "#3b6ef6",
+  "lang": "zh-CN",
+  "icons": [
+    { "src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}
