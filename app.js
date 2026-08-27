@@ -18,6 +18,8 @@
   if (!state.settings) state.settings = { voice: "", rate: 0.95 };
   if (typeof state.settings.rate !== "number") state.settings.rate = 0.95;
   if (typeof state.settings.remind !== "boolean") state.settings.remind = false;
+  if (typeof state.settings.readRate !== "number") state.settings.readRate = 0.9;
+  if (typeof state.settings.readVoice !== "string") state.settings.readVoice = "";
   if (state.settings.theme !== "light" && state.settings.theme !== "dark") {
     state.settings.theme =
       window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches
@@ -27,6 +29,8 @@
   if (!state.history) state.history = {}; // { "YYYY-MM-DD": reviewCount }
   if (typeof state.goal !== "number") state.goal = 20;
   if (state.plan === undefined) state.plan = null; // { scope, perDay, createdOn }
+  if (!Array.isArray(state.favReads)) state.favReads = []; // [{exch,doc,text}]
+  if (!state.dailyActivity) state.dailyActivity = {}; // { "YYYY-MM-DD": {listen,speak} }
   if (!state.skills) state.skills = {}; // per-skill { n: attempts, ok: correct }
   ["listen", "speak", "read", "write"].forEach((k) => {
     if (!state.skills[k]) state.skills[k] = { n: 0, ok: 0 };
@@ -292,6 +296,16 @@
   function recordReview() {
     const k = dayKey(new Date());
     state.history[k] = (state.history[k] || 0) + 1;
+  }
+  function todayActivity() {
+    const k = dayKey(new Date());
+    if (!state.dailyActivity[k]) state.dailyActivity[k] = { listen: 0, speak: 0 };
+    return state.dailyActivity[k];
+  }
+  function bumpDaily(kind) {
+    const a = todayActivity();
+    a[kind] = (a[kind] || 0) + 1;
+    save();
   }
   function recordSkill(skill, grade) {
     if (!skill || !state.skills[skill]) return;
@@ -688,6 +702,8 @@
       <div class="plan-form">
         <label class="field"><span>学习范围</span><select id="planScope">${opts}</select></label>
         <label class="field"><span>每日新词</span><input type="number" id="planPerDay" min="1" max="200" value="${perDay}" /></label>
+        <label class="field"><span>每日精听(句)</span><input type="number" id="planListen" min="0" max="500" value="${cur.listenGoal != null ? cur.listenGoal : 20}" /></label>
+        <label class="field"><span>每日跟读(句)</span><input type="number" id="planSpeak" min="0" max="200" value="${cur.speakGoal != null ? cur.speakGoal : 5}" /></label>
         <button class="btn primary" data-plan-save>${state.plan ? "保存计划" : "开始计划"}</button>
         ${state.plan ? '<button class="btn ghost" data-plan-cancel>取消</button>' : ""}
       </div>
@@ -711,9 +727,22 @@
     const eta = perDay > 0 ? Math.ceil(remaining / perDay) : 0;
     const pct = total ? Math.round((learned / total) * 100) : 0;
     const scopeName = !state.plan.scope || state.plan.scope === "__all__" ? "全部词库" : state.plan.scope;
-    const action = todo > 0
-      ? `<button class="btn primary today-go" data-today-start>开始今日学习 · ${newQ.length} 新词 + ${dueQ.length} 复习</button>`
-      : `<div class="today-done">✅ 今日任务已完成！🔥 连续打卡 ${streak} 天，明天继续～</div>`;
+    const act = todayActivity();
+    const listenGoal = state.plan.listenGoal != null ? state.plan.listenGoal : 20;
+    const speakGoal = (typeof SpeechRec !== "undefined" && SpeechRec) ? (state.plan.speakGoal != null ? state.plan.speakGoal : 5) : 0;
+    const listenDone = act.listen || 0, speakDone = act.speak || 0;
+    const listenLeft = Math.max(0, listenGoal - listenDone);
+    const speakLeft = Math.max(0, speakGoal - speakDone);
+    const allDone = todo === 0 && listenLeft === 0 && speakLeft === 0;
+    let action;
+    if (allDone) {
+      action = `<div class="today-done">✅ 今日任务已完成！🔥 连续打卡 ${streak} 天，明天继续～</div>`;
+    } else {
+      let btns = "";
+      if (todo > 0) btns += `<button class="btn primary today-go" data-today-start>背词 / 复习 · ${newQ.length} 新词 + ${dueQ.length} 复习</button>`;
+      if (listenLeft > 0 || speakLeft > 0) btns += `<button class="btn today-go" data-goto-read>去精听 / 跟读 · 精听还差 ${listenLeft}${speakGoal ? " · 跟读还差 " + speakLeft : ""}</button>`;
+      action = btns;
+    }
     box.innerHTML = `
       <div class="today-head">
         <span class="today-title">📅 今日学习 · ${escapeHtml(scopeName)}</span>
@@ -724,6 +753,7 @@
         <div class="tstat"><div class="tnum">${dueQ.length}</div><div class="tlbl">待复习</div></div>
         <div class="tstat"><div class="tnum">🔥 ${streak}</div><div class="tlbl">连续天数</div></div>
       </div>
+      <div class="today-sub">🎧 精听 ${listenDone}/${listenGoal} 句${speakGoal ? ` · 🗣️ 跟读 ${speakDone}/${speakGoal} 句` : ""}</div>
       ${action}
       <div class="today-progress">
         <div class="tp-bar"><div class="tp-fill" style="width:${pct}%"></div></div>
@@ -737,7 +767,9 @@
       if (e.target.closest("[data-plan-save]")) {
         const scope = $("#planScope").value;
         const perDay = Math.max(1, Math.min(200, parseInt($("#planPerDay").value, 10) || 10));
-        state.plan = { scope, perDay, createdOn: dayKey(new Date()) };
+        const listenGoal = Math.max(0, Math.min(500, parseInt($("#planListen").value, 10) || 0));
+        const speakGoal = Math.max(0, Math.min(200, parseInt($("#planSpeak").value, 10) || 0));
+        state.plan = { scope, perDay, listenGoal, speakGoal, createdOn: dayKey(new Date()) };
         planEditing = false; save(); renderHome();
       } else if (e.target.closest("[data-plan-cancel]")) {
         planEditing = false; renderTodayPlan();
@@ -745,6 +777,8 @@
         planEditing = true; renderTodayPlan();
       } else if (e.target.closest("[data-today-start]")) {
         startTodaySession();
+      } else if (e.target.closest("[data-goto-read]")) {
+        showView("read");
       }
     });
   }
@@ -943,21 +977,18 @@
   });
 
   // --- TTS voice + speed controls (shared by all study modes) ---
-  function populateVoiceSelect() {
-    const sel = $("#ttsVoice");
+  function fillVoiceSelect(sel, current) {
     if (!sel) return;
     const en = VOICES.filter((v) => /^en/i.test(v.lang));
     const list = en.length ? en : VOICES;
-    if (!list.length) {
-      sel.innerHTML = '<option value="">默认发音</option>';
-      return;
-    }
     sel.innerHTML =
       '<option value="">默认发音</option>' +
-      list
-        .map((v) => `<option value="${escapeHtml(v.name)}">${escapeHtml(v.name)} · ${escapeHtml(v.lang)}</option>`)
-        .join("");
-    sel.value = state.settings.voice || "";
+      list.map((v) => `<option value="${escapeHtml(v.name)}">${escapeHtml(v.name)} · ${escapeHtml(v.lang)}</option>`).join("");
+    sel.value = current || "";
+  }
+  function populateVoiceSelect() {
+    fillVoiceSelect($("#ttsVoice"), state.settings.voice);
+    fillVoiceSelect($("#rdVoice"), state.settings.readVoice);
   }
   $("#ttsVoice").addEventListener("change", (e) => {
     state.settings.voice = e.target.value;
@@ -1502,170 +1533,404 @@
       : `识别出 ${groups.length} 处术语（${foundCards.size} 个不同），悬停看释义、点击朗读。`;
     msg.className = "import-msg ok";
   }
-  // Real passages extracted from global exchange / clearing rule PDFs live in
-  // corpus.js (window.RULE_READING). The list below is a few original fallbacks.
-  const BUILTIN_READ_SAMPLES = [
-    { title: "交易所公告 · 交易时段",
-      text: "Please be advised that, in observance of the upcoming public holiday, the Exchange will be closed on Monday. Trading will resume in the regular continuous trading session on Tuesday, following the opening auction. Members should review any good-till-cancelled orders before the market reopens. The updated trading calendar is available on the member portal." },
-    { title: "清算通知 · 结算周期 T+1",
-      text: "Effective from the implementation date, the standard settlement cycle for cash equities will move from T+2 to T+1. Clearing members must ensure that settlement instructions are submitted and affirmed before the revised cut-off time. Any failure to deliver securities or cash by the settlement date will be treated as a failed settlement and may be subject to a buy-in. Please review your operational workflows and update any downstream systems accordingly." },
-    { title: "清算通知 · 保证金调整",
-      text: "The clearing house will update the initial margin parameters for the affected contracts, effective end of day. Variation margin will continue to be collected daily on a mark-to-market basis. Members whose collateral falls below the required amount will receive a margin call and must meet it before the next session. A revised haircut schedule for eligible collateral is attached." },
-    { title: "公司行为通知 · 派息",
-      text: "This notice concerns a mandatory corporate action on the underlying security. Holders on the record date will be entitled to the cash dividend, which will be credited on the payment date. The share price will be adjusted on the ex-date. Positions held through the custodian will be processed automatically, and no election is required from beneficial owners." },
-    { title: "接口规范 · FIX 会话",
-      text: "Upon establishing a session, the client sends a Logon message and keeps the connection alive with periodic heartbeat messages. Each message carries an incremented sequence number; if the counterparty detects a gap, it issues a resend request. A new order is submitted through a New Order Single, and the venue replies with an execution report indicating the order status. The gateway applies a pre-trade risk check before the order reaches the matching engine." },
-    { title: "运营 · 交收失败与对账",
-      text: "During end-of-day reconciliation, our records did not match the depository's for two line items. The discrepancy was traced to a trade break caused by a mismatched settlement instruction. As a workaround, the affected trades were placed on hold pending investigation. Once the root cause is confirmed, the corrected instructions will be resubmitted for settlement on the next business day." },
-    { title: "托管报表 · 收益与对账",
-      text: "This statement lists all holdings in safekeeping as of the reporting date. Income processing has credited the accrued interest and coupon payments due during the period. Any withholding tax has been deducted at source, and a tax reclaim will be filed where applicable. Please reconcile the holdings against your own records and report any discrepancy within five business days." },
-  ];
-  // Prefer real rule passages (corpus.js); fall back to the built-in samples.
-  const READ_SAMPLES =
-    typeof window !== "undefined" && Array.isArray(window.RULE_READING) && window.RULE_READING.length
-      ? window.RULE_READING.concat(BUILTIN_READ_SAMPLES)
-      : BUILTIN_READ_SAMPLES;
-  // Full rule-document library (corpus.js -> window.RULE_DOCS); fallback to samples.
-  const RULE_DOC_LIB =
-    typeof window !== "undefined" && Array.isArray(window.RULE_DOCS) && window.RULE_DOCS.length
-      ? window.RULE_DOCS
-      : [{ exchCN: "示例", doc: "精选片段", parts: READ_SAMPLES.map((s) => s.text) }];
+  /* ---- reading: business-topic browse + sentence-by-sentence listening ---- */
+  const RREAD =
+    window.RULE_READING && Array.isArray(window.RULE_READING.items)
+      ? window.RULE_READING
+      : { topics: [], items: [] };
+  const rdState = { topic: null, page: 0, item: -1, sents: [], si: 0 };
+  const RD_PAGE = 12;
+  const TOPIC_NAME = {};
+  (RREAD.topics || []).forEach((t) => { TOPIC_NAME[t.key] = t.name; });
+  let rdSearchQuery = "";
 
-  // Build the document selector (grouped by exchange) + part selector.
-  function populateReadSamples() {
-    const dsel = $("#rdDocSel");
-    if (!dsel) return;
-    const groups = {};
-    RULE_DOC_LIB.forEach((d, i) => {
-      const g = d.exchCN || d.exch || "其他";
-      (groups[g] = groups[g] || []).push(i);
-    });
-    let html = '<option value="">选择规则文档…</option>';
-    Object.keys(groups).forEach((g) => {
-      html += `<optgroup label="${escapeHtml(g)}">`;
-      groups[g].forEach((i) => {
-        const d = RULE_DOC_LIB[i];
-        html += `<option value="${i}">${escapeHtml(d.doc)}（${d.parts.length}段）</option>`;
-      });
-      html += "</optgroup>";
-    });
-    dsel.innerHTML = html;
-    populatePartSel(-1);
-    if (!window.speechSynthesis) { const b = $("#rdSpeak"); if (b) b.hidden = true; }
+  // Reuse vocabulary term highlighting for an arbitrary chunk of text.
+  function highlightTerms(text, cloze) {
+    const { index, maxLen } = buildTermIndex();
+    const tokens = tokenizeText(text);
+    const wordIdx = [];
+    tokens.forEach((t, i) => { if (t.word) wordIdx.push(i); });
+    const lower = tokens.map((t) => (t.word ? t.w.toLowerCase() : null));
+    const groups = [];
+    let wi = 0;
+    while (wi < wordIdx.length) {
+      let matched = null, mlen = 0;
+      const maxTry = Math.min(maxLen, wordIdx.length - wi);
+      for (let len = maxTry; len >= 1; len--) {
+        const parts = [];
+        for (let k = 0; k < len; k++) parts.push(lower[wordIdx[wi + k]]);
+        const key = parts.join(" ");
+        if (index.has(key)) { matched = index.get(key); mlen = len; break; }
+      }
+      if (matched) { groups.push({ start: wordIdx[wi], end: wordIdx[wi + mlen - 1], card: matched }); wi += mlen; }
+      else wi += 1;
+    }
+    let html = "", ti = 0, gi = 0;
+    while (ti < tokens.length) {
+      if (gi < groups.length && groups[gi].start === ti) {
+        const g = groups[gi];
+        const orig = tokens.slice(g.start, g.end + 1).map((t) => t.w).join("");
+        const cn = g.card.back || "";
+        if (cloze) html += `<span class="cloze" data-term="${escapeHtml(orig)}" title="${escapeHtml(cn)}">${"_".repeat(Math.max(4, orig.length))}</span>`;
+        else html += `<span class="term-hl" data-term="${escapeHtml(orig)}" title="${escapeHtml(cn)}">${escapeHtml(orig)}</span>`;
+        ti = g.end + 1; gi++;
+      } else { html += escapeHtml(tokens[ti].w); ti++; }
+    }
+    return html;
   }
-  function populatePartSel(docIdx) {
-    const psel = $("#rdPartSel");
-    if (!psel) return;
-    const d = RULE_DOC_LIB[docIdx];
-    if (!d) { psel.innerHTML = '<option value="">分段…</option>'; return; }
-    psel.innerHTML = d.parts
-      .map((_, i) => `<option value="${i}">第 ${i + 1} / ${d.parts.length} 段</option>`)
+  function splitSents(text) {
+    return (text.match(/[^.!?]+[.!?]+(?=\s|$)|[^.!?]+$/g) || [text])
+      .map((s) => s.trim())
+      .filter((s) => s.length > 1);
+  }
+  function itemsOfTopic(t) { return RREAD.items.filter((it) => it.t === t); }
+  function itemsForTopic(t) { return t === "__fav__" ? (state.favReads || []) : itemsOfTopic(t); }
+
+  function initReading() {
+    const sel = $("#rdTopicSel");
+    if (!sel) return;
+    if (!RREAD.topics.length) { sel.innerHTML = "<option>（无语料）</option>"; return; }
+    sel.innerHTML =
+      `<option value="__fav__">★ 我的收藏（${(state.favReads || []).length}）</option>` +
+      RREAD.topics
+        .map((tp) => `<option value="${escapeHtml(tp.key)}">${escapeHtml(tp.name)}（${itemsOfTopic(tp.key).length}）</option>`)
+        .join("");
+    rdState.topic = RREAD.topics[0].key;
+    rdState.page = 0;
+    if (!SpeechRec) { const m = $("#rdMic"); if (m) m.hidden = true; }
+    showReadBrowse();
+  }
+  function showReadBrowse() {
+    stopAuto();
+    stopRdRecog();
+    $("#rdBrowse").hidden = false;
+    $("#rdReader").hidden = true;
+    renderTopicList();
+  }
+  function renderTopicList() {
+    const fav = rdState.topic === "__fav__";
+    const items = itemsForTopic(rdState.topic);
+    const pages = Math.max(1, Math.ceil(items.length / RD_PAGE));
+    if (rdState.page >= pages) rdState.page = 0;
+    $("#rdCount").textContent = `${items.length} 篇`;
+    if (!items.length) {
+      $("#rdList").innerHTML = `<div class="muted" style="padding:12px">${fav ? "还没有收藏。打开任意材料后点 ☆ 收藏，即可在此复习精听/跟读。" : "（空）"}</div>`;
+      $("#rdPager").innerHTML = "";
+      return;
+    }
+    const start = rdState.page * RD_PAGE;
+    const slice = items.slice(start, start + RD_PAGE);
+    const exportBtn = fav ? `<button class="btn ghost small rd-export" data-export-fav>📋 导出全部收藏（${items.length}）</button>` : "";
+    $("#rdList").innerHTML = exportBtn + slice
+      .map((it) => {
+        const attr = fav ? `data-fav="${items.indexOf(it)}"` : `data-i="${RREAD.items.indexOf(it)}"`;
+        const preview = it.text.slice(0, 90) + (it.text.length > 90 ? "…" : "");
+        return `<div class="rd-card" ${attr}><div class="rd-card-src">${escapeHtml(it.exch)} · ${escapeHtml(it.doc)}</div><div class="rd-card-prev">${escapeHtml(preview)}</div></div>`;
+      })
       .join("");
+    $("#rdPager").innerHTML =
+      `<button class="btn ghost small" data-pg="prev" ${rdState.page === 0 ? "disabled" : ""}>← 上一页</button>` +
+      `<span class="rd-pageinfo">${rdState.page + 1} / ${pages}</span>` +
+      `<button class="btn ghost small" data-pg="next" ${rdState.page >= pages - 1 ? "disabled" : ""}>下一页 →</button>`;
   }
-  function loadReadPart() {
-    const di = Number($("#rdDocSel").value);
-    const pi = Number($("#rdPartSel").value || 0);
-    if (!RULE_DOC_LIB[di]) return;
-    stopReadAloud();
-    $("#rdText").value = RULE_DOC_LIB[di].parts[pi] || "";
-    analyzeReading();
+  function exportFavorites() {
+    const favs = state.favReads || [];
+    if (!favs.length) return;
+    const text = favs
+      .map((f, i) => `## ${i + 1}. ${f.exch} · ${f.doc}\n\n${f.text}`)
+      .join("\n\n---\n\n");
+    copyText(text, () => { const c = $("#rdCount"); if (c) c.textContent = `✓ 已复制 ${favs.length} 篇收藏`; });
   }
-  $("#rdAnalyze").addEventListener("click", analyzeReading);
-  $("#rdDocSel").addEventListener("change", (e) => {
-    const di = Number(e.target.value);
-    if (e.target.value === "" || !RULE_DOC_LIB[di]) { populatePartSel(-1); return; }
-    populatePartSel(di);
-    $("#rdPartSel").value = "0";
-    loadReadPart();
-  });
-  $("#rdPartSel").addEventListener("change", loadReadPart);
-  $("#rdCloze").addEventListener("change", () => {
-    if (!$("#rdOutput").hidden) analyzeReading();
-  });
-
-  // Read the whole loaded passage aloud, sentence by sentence (listening practice).
-  let rdSpeaking = false;
-  function stopReadAloud() {
-    rdSpeaking = false;
-    try { if (window.speechSynthesis) window.speechSynthesis.cancel(); } catch (_) {}
-    const sp = $("#rdSpeak"), st = $("#rdStop");
-    if (sp) sp.hidden = false;
-    if (st) st.hidden = true;
+  function openMaterialObj(it) {
+    if (!it) return;
+    rdState.cur = it;
+    rdState.sents = splitSents(it.text);
+    rdState.si = 0;
+    $("#rdResults").hidden = true;
+    $("#rdBrowse").hidden = true;
+    $("#rdReader").hidden = false;
+    $("#rdMeta").textContent = `${it.exch} · ${it.doc}`;
+    updateFavBtn();
+    loadNote();
+    renderReader();
   }
-  function readAloud() {
-    const TTSx = window.speechSynthesis;
-    const text = ($("#rdText").value || "").trim();
-    if (!TTSx || !text) return;
-    const sents = text.match(/[^.!?]+[.!?]+/g) || [text];
-    let i = 0;
-    rdSpeaking = true;
-    $("#rdSpeak").hidden = true;
-    $("#rdStop").hidden = false;
-    const rate = (state.settings && state.settings.rate) || 0.95;
-    const next = () => {
-      if (!rdSpeaking || i >= sents.length) { stopReadAloud(); return; }
-      const u = new SpeechSynthesisUtterance(sents[i].trim());
+  // Notes: one free-text note per material, keyed by its text, auto-saved.
+  function noteKey(it) { return it ? it.text : ""; }
+  function getNote(it) { return (state.readNotes || {})[noteKey(it)] || ""; }
+  function updateNoteBtn() {
+    const b = $("#rdNote"); if (!b) return;
+    b.textContent = getNote(rdState.cur).trim() ? "📝 笔记 ●" : "📝 笔记";
+  }
+  function loadNote() {
+    const ta = $("#rdNoteText");
+    if (ta) ta.value = getNote(rdState.cur);
+    const box = $("#rdNoteBox");
+    if (box) box.hidden = !getNote(rdState.cur).trim();
+    updateNoteBtn();
+  }
+  function saveNote(text) {
+    const it = rdState.cur; if (!it) return;
+    state.readNotes = state.readNotes || {};
+    const k = noteKey(it);
+    if (text.trim()) state.readNotes[k] = text;
+    else delete state.readNotes[k];
+    save();
+    updateNoteBtn();
+    const h = $("#rdNoteHint"); if (h) { h.textContent = "已保存 ✓"; setTimeout(() => { h.textContent = "自动保存"; }, 1200); }
+  }
+  function openMaterial(gi) { openMaterialObj(RREAD.items[gi]); }
+  function isFavCur() {
+    const it = rdState.cur;
+    return !!it && (state.favReads || []).some((f) => f.text === it.text);
+  }
+  function updateFavBtn() {
+    const b = $("#rdFav"); if (b) b.textContent = isFavCur() ? "★ 已收藏" : "☆ 收藏";
+  }
+  // Add the tapped word to a personal wordbook (a "生词本" category card in the store).
+  function addToWordbook(word) {
+    if (!word || word.length < 2) return;
+    const w = word.toLowerCase();
+    const el = $("#rdSpkResult");
+    if (state.cards.some((c) => (c.front || "").toLowerCase() === w && c.category === "生词本")) {
+      if (el) el.textContent = `「${word}」已在生词本`;
+      return;
+    }
+    const known = state.cards.find((c) => (c.front || "").toLowerCase() === w && (c.back || "").trim());
+    state.cards.push({
+      id: uid(), front: word, back: known ? known.back : "", example: rdState.sents[rdState.si] || "",
+      category: "生词本", reps: 0, ease: 2.5, interval: 0, due: Date.now(), lapses: 0, correct: 0, seen: 0,
+    });
+    save();
+    if (el) el.textContent = `✓ 已加入生词本：${word}${known ? "（" + known.back + "）" : ""}`;
+  }
+  function wordSpans(s) {
+    return escapeHtml(s).replace(/[A-Za-z][A-Za-z'’\-]*/g, (w) => `<span class="rd-word" data-w="${w}">${w}</span>`);
+  }
+  function renderReader() {
+    stopRdRecog();
+    const cloze = $("#rdCloze").checked;
+    const wb = $("#rdWordMode") && $("#rdWordMode").checked;
+    $("#rdSents").innerHTML = rdState.sents
+      .map((s, i) => `<span class="rd-sent${i === rdState.si ? " cur" : ""}${wb ? " wb" : ""}" data-i="${i}">${wb ? wordSpans(s) : highlightTerms(s, cloze)}</span>`)
+      .join(" ");
+    $("#rdPos").textContent = `第 ${rdState.si + 1} / ${rdState.sents.length} 句${wb ? " · 点词加入生词本" : ""}`;
+    const sr = $("#rdSpkResult"); if (sr) sr.innerHTML = "";
+    const cur = $("#rdSents .rd-sent.cur");
+    if (cur) cur.scrollIntoView({ block: "nearest" });
+  }
+  function rdSpeakOne(text) {
+    const TTS = window.speechSynthesis;
+    if (!TTS || !text) return;
+    try {
+      TTS.cancel();
+      const u = new SpeechSynthesisUtterance(String(text));
       u.lang = "en-US";
-      u.rate = rate;
-      const v = VOICES.find((x) => x.name === (state.settings && state.settings.voice));
+      u.rate = state.settings.readRate || state.settings.rate || 0.95;
+      const vn = state.settings.readVoice || state.settings.voice;
+      const v = VOICES.find((x) => x.name === vn);
       if (v) u.voice = v;
-      u.onend = () => { i++; next(); };
-      u.onerror = () => { i++; next(); };
-      try { TTSx.speak(u); } catch (_) { stopReadAloud(); }
-    };
-    try { TTSx.cancel(); } catch (_) {}
-    next();
+      TTS.speak(u);
+    } catch (_) {}
   }
-  $("#rdSpeak").addEventListener("click", readAloud);
-  $("#rdStop").addEventListener("click", stopReadAloud);
+  function playSent(i) { const s = rdState.sents[i]; if (s) { rdSpeakOne(s); bumpDaily("listen"); } }
+  function gotoSent(i) {
+    if (i < 0 || i >= rdState.sents.length) return;
+    rdState.si = i;
+    renderReader();
+    playSent(i);
+  }
+  let rdAutoOn = false;
+  function stopAuto() {
+    rdAutoOn = false;
+    try { if (window.speechSynthesis) window.speechSynthesis.cancel(); } catch (_) {}
+    const b = $("#rdAuto"); if (b) b.textContent = "▶️ 连续";
+  }
+  function startAuto() {
+    if (!window.speechSynthesis) return;
+    rdAutoOn = true;
+    const b = $("#rdAuto"); if (b) b.textContent = "⏸ 停止";
+    const rate = (state.settings && (state.settings.readRate || state.settings.rate)) || 0.95;
+    const vn = state.settings.readVoice || state.settings.voice;
+    const step = () => {
+      if (!rdAutoOn || rdState.si >= rdState.sents.length) { stopAuto(); return; }
+      renderReader();
+      bumpDaily("listen");
+      const u = new SpeechSynthesisUtterance(rdState.sents[rdState.si]);
+      u.lang = "en-US"; u.rate = rate;
+      const v = VOICES.find((x) => x.name === vn);
+      if (v) u.voice = v;
+      u.onend = () => { if (rdAutoOn) { rdState.si++; if (rdState.si < rdState.sents.length) step(); else stopAuto(); } };
+      u.onerror = () => { if (rdAutoOn) { rdState.si++; if (rdState.si < rdState.sents.length) step(); else stopAuto(); } };
+      try { window.speechSynthesis.cancel(); window.speechSynthesis.speak(u); } catch (_) { stopAuto(); }
+    };
+    step();
+  }
+  $("#rdTopicSel").addEventListener("change", (e) => { rdState.topic = e.target.value; rdState.page = 0; renderTopicList(); });
+  $("#rdList").addEventListener("click", (e) => {
+    if (e.target.closest("[data-export-fav]")) { exportFavorites(); return; }
+    const c = e.target.closest(".rd-card"); if (!c) return;
+    if (c.dataset.fav != null) openMaterialObj((state.favReads || [])[Number(c.dataset.fav)]);
+    else openMaterial(Number(c.dataset.i));
+  });
+  $("#rdFav").addEventListener("click", () => {
+    const it = rdState.cur; if (!it) return;
+    state.favReads = state.favReads || [];
+    const i = state.favReads.findIndex((f) => f.text === it.text);
+    if (i >= 0) state.favReads.splice(i, 1);
+    else state.favReads.unshift({ exch: it.exch, doc: it.doc, text: it.text });
+    save();
+    updateFavBtn();
+  });
+  $("#rdPager").addEventListener("click", (e) => {
+    const b = e.target.closest("[data-pg]"); if (!b) return;
+    if (b.dataset.pg === "prev" && rdState.page > 0) rdState.page--;
+    else if (b.dataset.pg === "next") rdState.page++;
+    renderTopicList();
+  });
+  $("#rdBack").addEventListener("click", showReadBrowse);
+  const rdCopyEl = $("#rdCopy");
+  if (rdCopyEl) rdCopyEl.addEventListener("click", () => {
+    const it = rdState.cur; if (!it) return;
+    const text = `${it.exch} · ${it.doc}\n\n${it.text}`;
+    copyText(text, () => { const sr = $("#rdSpkResult"); if (sr) sr.textContent = "✓ 已复制本篇到剪贴板"; });
+  });
+  const rdNoteEl = $("#rdNote");
+  if (rdNoteEl) rdNoteEl.addEventListener("click", () => {
+    const box = $("#rdNoteBox"); if (!box) return;
+    box.hidden = !box.hidden;
+    if (!box.hidden) { const ta = $("#rdNoteText"); if (ta) ta.focus(); }
+  });
+  const rdNoteTextEl = $("#rdNoteText");
+  if (rdNoteTextEl) rdNoteTextEl.addEventListener("input", (e) => saveNote(e.target.value));
+  const rdNoteAddSentEl = $("#rdNoteAddSent");
+  if (rdNoteAddSentEl) rdNoteAddSentEl.addEventListener("click", () => {
+    const ta = $("#rdNoteText"); const s = rdState.sents[rdState.si]; if (!ta || !s) return;
+    ta.value = (ta.value ? ta.value.replace(/\s*$/, "") + "\n\n" : "") + `> ${s}\n`;
+    ta.focus();
+    saveNote(ta.value);
+  });
+  $("#rdPrev").addEventListener("click", () => gotoSent(rdState.si - 1));
+  $("#rdNext").addEventListener("click", () => gotoSent(rdState.si + 1));
+  $("#rdPlay").addEventListener("click", () => playSent(rdState.si));
+  $("#rdRepeat").addEventListener("click", () => playSent(rdState.si));
+  $("#rdAuto").addEventListener("click", () => { if (rdAutoOn) stopAuto(); else startAuto(); });
+  $("#rdCloze").addEventListener("change", renderReader);
+  const rdWordModeEl = $("#rdWordMode");
+  if (rdWordModeEl) rdWordModeEl.addEventListener("change", renderReader);
+  $("#rdSents").addEventListener("click", (e) => {
+    const wd = e.target.closest(".rd-word"); if (wd) { addToWordbook(wd.dataset.w); return; }
+    const term = e.target.closest(".term-hl"); if (term) { speak(term.dataset.term); return; }
+    const cz = e.target.closest(".cloze");
+    if (cz && !cz.classList.contains("revealed")) { cz.textContent = cz.dataset.term; cz.classList.add("revealed"); speak(cz.dataset.term); return; }
+    const sent = e.target.closest(".rd-sent"); if (sent) gotoSent(Number(sent.dataset.i));
+  });
 
-  // Full-library keyword search across all 88 documents.
+  // Reader shadowing: score pronunciation of the current sentence (separate recognizer).
+  let rdRecog = null, rdListening = false, rdFinal = "";
+  function updateRdMic() {
+    const b = $("#rdMic"); if (!b) return;
+    b.classList.toggle("listening", rdListening);
+    b.textContent = rdListening ? "🛑 结束" : "🎤 跟读";
+  }
+  function stopRdRecog() {
+    if (rdRecog && rdListening) { try { rdRecog.stop(); } catch (_) {} }
+    rdListening = false;
+    updateRdMic();
+  }
+  function ensureRdRecog() {
+    if (!SpeechRec) return null;
+    if (rdRecog) return rdRecog;
+    rdRecog = new SpeechRec();
+    rdRecog.lang = "en-US"; rdRecog.interimResults = true; rdRecog.maxAlternatives = 1; rdRecog.continuous = false;
+    rdRecog.onresult = (e) => {
+      let interim = "", fin = "";
+      for (let i = 0; i < e.results.length; i++) { const r = e.results[i]; if (r.isFinal) fin += r[0].transcript; else interim += r[0].transcript; }
+      rdFinal = fin;
+      const el = $("#rdSpkResult"); if (el) el.textContent = (fin + " " + interim).trim() || "🎙️ 聆听中…";
+    };
+    rdRecog.onerror = () => { rdListening = false; updateRdMic(); };
+    rdRecog.onend = () => { rdListening = false; updateRdMic(); if (rdFinal.trim()) scoreRdSentence(rdFinal.trim()); };
+    return rdRecog;
+  }
+  function scoreRdSentence(heard) {
+    const target = rdState.sents[rdState.si] || "";
+    const tWords = normalizeAnswer(target).split(" ").filter(Boolean);
+    const hWords = normalizeAnswer(heard).split(" ").filter(Boolean);
+    const { marks, len } = lcsMarks(tWords, hWords);
+    const score = tWords.length ? Math.round((len / tWords.length) * 100) : 0;
+    const missed = tWords.filter((_, i) => !marks[i]);
+    const color = score >= 80 ? "var(--green)" : score >= 50 ? "var(--amber)" : "var(--red)";
+    let d = `<span class="pct" style="color:${color}">${score} 分</span> <span class="muted">你说：</span>${escapeHtml(heard)}`;
+    if (missed.length) d += `<br><span class="muted">待加强：</span><span class="mark-no">${missed.map(escapeHtml).join(", ")}</span>`;
+    const el = $("#rdSpkResult"); if (el) el.innerHTML = d;
+    recordSkill("speak", score >= 80 ? 2 : score >= 50 ? 1 : 0);
+    bumpDaily("speak");
+    save();
+  }
+  $("#rdMic").addEventListener("click", () => {
+    if (!SpeechRec) return;
+    if (rdListening) { stopRdRecog(); return; }
+    const r = ensureRdRecog(); if (!r) return;
+    rdFinal = "";
+    const el = $("#rdSpkResult"); if (el) el.textContent = "🎙️ 聆听中…";
+    try { r.start(); rdListening = true; updateRdMic(); } catch (_) {}
+  });
+  const rdRateEl = $("#rdRate");
+  if (rdRateEl) {
+    rdRateEl.value = state.settings.readRate;
+    rdRateEl.addEventListener("input", (e) => { state.settings.readRate = Number(e.target.value); save(); });
+    rdRateEl.addEventListener("change", () => rdSpeakOne("settlement date"));
+  }
+  const rdVoiceEl = $("#rdVoice");
+  if (rdVoiceEl) rdVoiceEl.addEventListener("change", (e) => { state.settings.readVoice = e.target.value; save(); rdSpeakOne("clearing house"); });
+
+  // Full-library keyword search over paragraph items, grouped by business topic.
   function searchCorpus() {
     const q = ($("#rdSearch").value || "").trim();
-    const box = $("#rdResults");
-    const msg = $("#rdSearchMsg");
+    const box = $("#rdResults"), msg = $("#rdSearchMsg");
     if (!box || !msg) return;
     if (q.length < 2) { msg.textContent = "请输入至少 2 个字符"; box.hidden = true; return; }
-    const ql = q.toLowerCase();
-    const MAX = 80;
-    const results = [];
-    for (let di = 0; di < RULE_DOC_LIB.length && results.length < MAX; di++) {
-      const d = RULE_DOC_LIB[di];
-      for (let pi = 0; pi < d.parts.length && results.length < MAX; pi++) {
-        const text = d.parts[pi];
-        const idx = text.toLowerCase().indexOf(ql);
-        if (idx >= 0) {
-          const start = Math.max(0, idx - 45);
-          const end = Math.min(text.length, idx + q.length + 70);
-          const snip = (start > 0 ? "…" : "") + text.slice(start, end) + (end < text.length ? "…" : "");
-          results.push({ di, pi, exchCN: d.exchCN || d.exch, doc: d.doc, snip });
-        }
+    rdSearchQuery = q;
+    const ql = q.toLowerCase(); const MAX = 80; const results = [];
+    for (let i = 0; i < RREAD.items.length && results.length < MAX; i++) {
+      const it = RREAD.items[i];
+      const idx = it.text.toLowerCase().indexOf(ql);
+      if (idx >= 0) {
+        const start = Math.max(0, idx - 45), end = Math.min(it.text.length, idx + q.length + 70);
+        const snip = (start > 0 ? "…" : "") + it.text.slice(start, end) + (end < it.text.length ? "…" : "");
+        results.push({ i, t: it.t, exch: it.exch, doc: it.doc, snip });
       }
     }
     if (!results.length) { msg.textContent = `未找到「${q}」`; box.hidden = true; box.innerHTML = ""; return; }
-    msg.textContent = `找到 ${results.length}${results.length >= MAX ? "+" : ""} 处，点击跳转`;
+    msg.textContent = `找到 ${results.length}${results.length >= MAX ? "+" : ""} 处，点击打开并定位到句`;
     const rx = new RegExp("(" + q.replace(/[.*+?^${}()|[\]\\]/g, "\\$&") + ")", "ig");
-    box.innerHTML = results
-      .map((r) => {
-        const snip = escapeHtml(r.snip).replace(rx, "<mark>$1</mark>");
-        return `<div class="search-hit" data-di="${r.di}" data-pi="${r.pi}"><span class="hit-src">${escapeHtml(r.exchCN)} · ${escapeHtml(r.doc)} · 第 ${r.pi + 1} 段</span><span class="hit-snip">${snip}</span></div>`;
-      })
-      .join("");
+    const byTopic = {};
+    results.forEach((r) => { (byTopic[r.t] = byTopic[r.t] || []).push(r); });
+    const order = (RREAD.topics || []).map((t) => t.key).filter((k) => byTopic[k]);
+    let html = "";
+    order.forEach((k) => {
+      html += `<div class="search-group">${escapeHtml(TOPIC_NAME[k] || k)}（${byTopic[k].length}）</div>`;
+      html += byTopic[k]
+        .map((r) => `<div class="search-hit" data-i="${r.i}"><span class="hit-src">${escapeHtml(r.exch)} · ${escapeHtml(r.doc)}</span><span class="hit-snip">${escapeHtml(r.snip).replace(rx, "<mark>$1</mark>")}</span></div>`)
+        .join("");
+    });
+    box.innerHTML = html;
     box.hidden = false;
+  }
+  // Open a material from a search hit and jump to the sentence containing the query.
+  function openFromSearch(gi) {
+    openMaterial(gi);
+    const q = (rdSearchQuery || "").toLowerCase();
+    if (!q) return;
+    const li = rdState.sents.findIndex((s) => s.toLowerCase().includes(q));
+    if (li >= 0) gotoSent(li);
   }
   $("#rdSearchBtn").addEventListener("click", searchCorpus);
   $("#rdSearch").addEventListener("keydown", (e) => { if (e.key === "Enter") searchCorpus(); });
   $("#rdResults").addEventListener("click", (e) => {
-    const hit = e.target.closest(".search-hit");
-    if (!hit) return;
-    const di = Number(hit.dataset.di), pi = Number(hit.dataset.pi);
-    if (!RULE_DOC_LIB[di]) return;
-    $("#rdDocSel").value = String(di);
-    populatePartSel(di);
-    $("#rdPartSel").value = String(pi);
-    loadReadPart();
-    const out = $("#rdOutput");
-    if (out && !out.hidden) out.scrollIntoView({ behavior: "smooth", block: "start" });
+    const hit = e.target.closest(".search-hit"); if (!hit) return;
+    $("#rdResults").hidden = true;
+    openFromSearch(Number(hit.dataset.i));
   });
 
   /* ---------------------------------------------------------------- grammar */
@@ -1688,30 +1953,55 @@
         )
         .join("");
     }
-    const iv = $("#gsub-items");
-    if (iv && Array.isArray(G.items)) {
-      let html = "", curSec = null;
-      G.items.forEach((it) => {
-        if (it.sec !== curSec) { curSec = it.sec; html += `<h3 class="gi-sec">${escapeHtml(curSec)}</h3>`; }
-        const pts = (it.points || [])
-          .map((pt) => {
-            const idx = pt.indexOf("：");
-            return idx > 0
-              ? `<li><b>${escapeHtml(pt.slice(0, idx))}</b>：${escapeHtml(pt.slice(idx + 1))}</li>`
-              : `<li>${escapeHtml(pt)}</li>`;
-          })
-          .join("");
-        html += `
-        <div class="gi-card">
-          <div class="gi-en"><button class="say-btn" data-say="${escapeHtml(it.en)}" title="朗读">🔊</button><span>${escapeHtml(it.en)}</span></div>
-          <div class="gi-cn">${escapeHtml(it.cn)}</div>
-          <div class="gi-core"><span class="gi-tag">主干</span>${escapeHtml(it.core)}</div>
-          <ul class="gi-points">${pts}</ul>
-        </div>`;
-      });
-      iv.innerHTML = html;
-    }
+    buildGItemsShell(G);
     grammarBuilt = true;
+  }
+  const GI_PAGE = 12;
+  const giState = { pat: "all", page: 0 };
+  function grammarPatOf(i) {
+    const G = window.RULE_GRAMMAR || {};
+    const it = (G.items || [])[i];
+    if (it && typeof it.pat === "number") return it.pat;
+    const arr = G.patternOf || [];
+    return arr[i] != null ? arr[i] : -1;
+  }
+  function buildGItemsShell(G) {
+    const iv = $("#gsub-items");
+    if (!iv) return;
+    const patNames = (G.patterns || []).map((p) => p.name);
+    const opts = ['<option value="all">全部句型</option>']
+      .concat(patNames.map((n, i) => `<option value="${i}">${escapeHtml(n)}</option>`))
+      .join("");
+    iv.innerHTML = `<div class="gi-bar"><select id="giPatSel" class="mini-select">${opts}</select><span class="gi-count muted" id="giCount"></span></div><div id="giList"></div><div class="rd-pager" id="giPager"></div>`;
+    renderGItems();
+  }
+  function giFiltered() {
+    const items = (window.RULE_GRAMMAR || {}).items || [];
+    const idxs = items.map((_, i) => i);
+    if (giState.pat === "all") return idxs;
+    return idxs.filter((i) => grammarPatOf(i) === Number(giState.pat));
+  }
+  function renderGItems() {
+    const items = (window.RULE_GRAMMAR || {}).items || [];
+    const list = giFiltered();
+    const pages = Math.max(1, Math.ceil(list.length / GI_PAGE));
+    if (giState.page >= pages) giState.page = 0;
+    const slice = list.slice(giState.page * GI_PAGE, giState.page * GI_PAGE + GI_PAGE);
+    const cnt = $("#giCount"); if (cnt) cnt.textContent = `${list.length} 句`;
+    const listBox = $("#giList");
+    if (listBox) listBox.innerHTML = slice.map((i) => {
+      const it = items[i];
+      const pts = (it.points || []).map((pt) => {
+        const idx = pt.indexOf("：");
+        return idx > 0 ? `<li><b>${escapeHtml(pt.slice(0, idx))}</b>：${escapeHtml(pt.slice(idx + 1))}</li>` : `<li>${escapeHtml(pt)}</li>`;
+      }).join("");
+      return `<div class="gi-card"><div class="gi-en"><button class="say-btn" data-say="${escapeHtml(it.en)}" title="朗读">🔊</button><span>${escapeHtml(it.en)}</span></div><div class="gi-cn">${escapeHtml(it.cn)}</div><div class="gi-core"><span class="gi-tag">主干</span>${escapeHtml(it.core)}</div><ul class="gi-points">${pts}</ul></div>`;
+    }).join("");
+    const pager = $("#giPager");
+    if (pager) pager.innerHTML =
+      `<button class="btn ghost small" data-gpg="prev" ${giState.page === 0 ? "disabled" : ""}>← 上一页</button>` +
+      `<span class="rd-pageinfo">${giState.page + 1} / ${pages}</span>` +
+      `<button class="btn ghost small" data-gpg="next" ${giState.page >= pages - 1 ? "disabled" : ""}>下一页 →</button>`;
   }
   const grammarSeg = $("#grammarSeg");
   if (grammarSeg) {
@@ -1731,6 +2021,18 @@
     grammarView.addEventListener("click", (e) => {
       const s = e.target.closest(".say-btn");
       if (s) speak(s.dataset.say);
+    });
+  }
+  const gItemsBox = $("#gsub-items");
+  if (gItemsBox) {
+    gItemsBox.addEventListener("change", (e) => {
+      if (e.target.id === "giPatSel") { giState.pat = e.target.value; giState.page = 0; renderGItems(); }
+    });
+    gItemsBox.addEventListener("click", (e) => {
+      const b = e.target.closest("[data-gpg]"); if (!b) return;
+      if (b.dataset.gpg === "prev" && giState.page > 0) giState.page--;
+      else if (b.dataset.gpg === "next") giState.page++;
+      renderGItems();
     });
   }
 
@@ -1757,7 +2059,7 @@
     return order.map((i, k) => {
       const it = items[i];
       let type = types[k % 3];
-      if (type === "pat" && !(patOf[i] >= 0 && patNames.length >= 4)) type = "core";
+      if (type === "pat" && !(grammarPatOf(i) >= 0 && patNames.length >= 4)) type = "core";
       if (type === "core") {
         const d = pickDistract(it.core, (x) => x.core);
         return { en: it.en, type, ask: "选出该句的<b>主干</b>（去掉从句与修饰后的 S + V + O）：", correct: it.core, options: shuffle([it.core, ...d]), core: it.core, points: it.points };
@@ -1766,11 +2068,12 @@
         const d = pickDistract(it.cn, (x) => x.cn);
         return { en: it.en, type, ask: "选出该句的<b>准确中文</b>：", correct: it.cn, options: shuffle([it.cn, ...d]), core: it.core, points: it.points };
       }
-      const correct = patNames[patOf[i]];
+      const pidx = grammarPatOf(i);
+      const correct = patNames[pidx];
       const seen = new Set([correct]);
       const d = [];
       for (const nm of shuffle(patNames)) { if (d.length >= 3) break; if (!seen.has(nm)) { seen.add(nm); d.push(nm); } }
-      const tip = (G.patterns[patOf[i]] && G.patterns[patOf[i]].tip) || "";
+      const tip = (G.patterns[pidx] && G.patterns[pidx].tip) || "";
       return { en: it.en, type, ask: "这句<b>最突出的句式结构</b>是？", correct, options: shuffle([correct, ...d]), core: it.core, points: it.points, patTip: tip };
     });
   }
@@ -2385,7 +2688,7 @@
     if (q) q.style.display = "none";
   }
   applyTheme();
-  populateReadSamples();
+  initReading();
   renderCategories();
   showView("home");
   maybeNotifyDue();

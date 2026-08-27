@@ -642,3 +642,52 @@ code { background: var(--soft); padding: 1px 6px; border-radius: 6px; font-size:
 .badge.locked { opacity: 0.35; filter: grayscale(1); }
 .badge.earned { border-color: var(--brand); box-shadow: 0 0 0 1px var(--brand) inset; }
 .remind-row { display: flex; align-items: center; gap: 10px; margin-top: 14px; flex-wrap: wrap; }
+
+/* Reading: topic browse + sentence listening */
+.rd-count { margin-left: 8px; font-size: 13px; }
+.rd-list { display: flex; flex-direction: column; gap: 8px; margin: 10px 0; }
+.rd-card { border: 1px solid var(--line); border-radius: 10px; background: var(--panel); padding: 10px 12px; cursor: pointer; }
+.rd-card:hover { background: var(--active); }
+.rd-card-src { font-size: 12px; color: var(--brand); margin-bottom: 4px; }
+.rd-card-prev { font-size: 13px; color: var(--ink); line-height: 1.5; }
+.rd-export { align-self: flex-start; margin-bottom: 4px; }
+.rd-note { margin: 8px 0; }
+.rd-note textarea { width: 100%; box-sizing: border-box; border: 1px solid var(--line); border-radius: 10px; background: var(--panel); color: var(--ink); padding: 8px 10px; font: inherit; line-height: 1.5; resize: vertical; }
+.rd-note-row { display: flex; align-items: center; gap: 10px; margin-top: 6px; }
+.rd-note-hint { font-size: 12px; }
+.rd-pager { display: flex; align-items: center; justify-content: center; gap: 12px; margin: 8px 0; }
+.rd-pageinfo { font-size: 13px; color: var(--muted); }
+.rd-reader-bar { display: flex; align-items: center; gap: 12px; margin-bottom: 10px; flex-wrap: wrap; }
+.rd-meta { font-size: 13px; }
+.rd-sentences { font-size: 17px; line-height: 2; color: var(--ink); padding: 6px 2px; }
+.rd-sent { cursor: pointer; border-radius: 4px; padding: 1px 2px; }
+.rd-sent:hover { background: var(--surface-2); }
+.rd-sent.cur { background: #fff3c4; box-shadow: 0 0 0 2px #ffe08a; }
+[data-theme="dark"] .rd-sent.cur { background: #4a3d10; box-shadow: 0 0 0 2px #7a5c00; }
+.rd-ctrls { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-top: 14px; position: sticky; bottom: 0; background: var(--bg); padding: 8px 0; }
+.rd-pos { font-size: 12px; color: var(--muted); margin-left: auto; }
+
+/* Grammar items: filter bar */
+.gi-bar { display: flex; align-items: center; gap: 10px; margin: 6px 0 4px; }
+.gi-count { font-size: 13px; }
+
+/* Reader shadowing result */
+.rd-spk-result { margin-top: 8px; font-size: 14px; line-height: 1.6; color: var(--ink); min-height: 1em; }
+.rd-spk-result .pct { font-weight: 700; }
+#rdMic.listening { background: var(--red, #e5484d); color: #fff; border-color: var(--red, #e5484d); }
+
+/* Reader wordbook mode */
+.rd-sent.wb .rd-word { cursor: pointer; border-radius: 3px; padding: 0 1px; }
+.rd-sent.wb .rd-word:hover { background: var(--active); text-decoration: underline dotted; }
+#rdFav { white-space: nowrap; }
+
+/* Today: listen/speak sub-line */
+.today-sub { font-size: 13px; color: var(--ink); margin: 4px 0 10px; }
+.today-panel .today-go + .today-go { margin-top: 8px; }
+
+/* Reader TTS preferences */
+.rd-tts { display: flex; align-items: center; gap: 12px; margin-top: 10px; flex-wrap: wrap; font-size: 13px; color: var(--muted); }
+.rd-tts input[type="range"] { vertical-align: middle; }
+
+/* Search results: topic group headers */
+.search-group { font-size: 12px; font-weight: 600; color: var(--brand); background: var(--surface-2); padding: 5px 12px; position: sticky; top: 0; }

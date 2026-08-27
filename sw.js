@@ -1,5 +1,5 @@
 /* Service worker: cache the app shell so it works fully offline once opened. */
-const CACHE = "vocab-trainer-v12";
+const CACHE = "vocab-trainer-v21";
 const ASSETS = [
   "./",
   "./index.html",

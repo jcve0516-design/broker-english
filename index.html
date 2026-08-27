@@ -254,27 +254,57 @@
 
       <!-- READING -->
       <section class="view" id="view-read">
-        <h2>文档阅读 · 全球规则原文库</h2>
-        <p class="muted">内置 88 份全球交易所 / 清算规则<b>全文</b>（按交易所 → 文档 → 分段选择）。自动高亮词库术语（悬停看释义、点击朗读）；「🔊 朗读本段」可整段听力；「挖空模式」做填空回忆。也可自行粘贴英文分析。</p>
+        <h2>阅读精听 · 全球规则原文库</h2>
+        <p class="muted">按<b>业务主题</b>浏览 88 份规则原文，段落级材料 + <b>逐句精听</b>（上一句/下一句/重播/连续播放）。术语高亮悬停看释义、点击朗读，可开挖空。</p>
         <div class="import-actions read-search">
-          <input type="search" id="rdSearch" class="search" placeholder="全库搜索：输入词 / 短语，如 settlement date、buy-in、margin call…" />
-          <button class="btn primary" id="rdSearchBtn">搜索全库</button>
+          <input type="search" id="rdSearch" class="search" placeholder="全库搜索：词 / 短语，如 settlement date、buy-in、margin call…" />
+          <button class="btn primary" id="rdSearchBtn">搜索</button>
           <span class="import-msg" id="rdSearchMsg"></span>
         </div>
         <div class="read-results" id="rdResults" hidden></div>
-        <div class="import-actions read-picker">
-          <select id="rdDocSel" class="mini-select" title="选择文档"></select>
-          <select id="rdPartSel" class="mini-select" title="选择分段"></select>
+
+        <div id="rdBrowse">
+          <div class="import-actions read-picker">
+            <select id="rdTopicSel" class="mini-select" title="业务主题"></select>
+            <span class="rd-count muted" id="rdCount"></span>
+          </div>
+          <div class="rd-list" id="rdList"></div>
+          <div class="rd-pager" id="rdPager"></div>
         </div>
-        <textarea id="rdText" class="import-text" placeholder="在此粘贴英文文档段落，或从上方选择内置规则文档…"></textarea>
-        <div class="import-actions">
-          <button class="btn primary" id="rdAnalyze">分析</button>
-          <button class="btn" id="rdSpeak">🔊 朗读本段</button>
-          <button class="btn" id="rdStop" hidden>⏹ 停止</button>
-          <label class="chk"><input type="checkbox" id="rdCloze" /> 挖空模式</label>
-          <span class="import-msg" id="rdMsg"></span>
+
+        <div id="rdReader" hidden>
+          <div class="rd-reader-bar">
+            <button class="btn ghost small" id="rdBack">← 返回列表</button>
+            <button class="btn ghost small" id="rdFav">☆ 收藏</button>
+            <button class="btn ghost small" id="rdCopy">📋 复制</button>
+            <button class="btn ghost small" id="rdNote">📝 笔记</button>
+            <span class="rd-meta muted" id="rdMeta"></span>
+          </div>
+          <div class="rd-note" id="rdNoteBox" hidden>
+            <textarea id="rdNoteText" rows="3" placeholder="给这篇材料写点笔记，自动随材料保存…"></textarea>
+            <div class="rd-note-row">
+              <button class="btn ghost small" id="rdNoteAddSent">＋ 引用当前句</button>
+              <span class="rd-note-hint muted" id="rdNoteHint">自动保存</span>
+            </div>
+          </div>
+          <div class="rd-sentences" id="rdSents"></div>
+          <div class="rd-ctrls">
+            <button class="btn" id="rdPrev" title="上一句">⏮</button>
+            <button class="btn primary" id="rdPlay">▶️ 播放</button>
+            <button class="btn" id="rdRepeat" title="重播">🔁</button>
+            <button class="btn" id="rdNext" title="下一句">⏭</button>
+            <button class="btn" id="rdAuto">▶️ 连续</button>
+            <button class="btn" id="rdMic">🎤 跟读</button>
+            <label class="chk"><input type="checkbox" id="rdCloze" /> 挖空</label>
+            <label class="chk"><input type="checkbox" id="rdWordMode" /> 收生词</label>
+            <span class="rd-pos muted" id="rdPos"></span>
+          </div>
+          <div class="rd-spk-result" id="rdSpkResult"></div>
+          <div class="rd-tts">
+            <label class="chk">语速 <input type="range" id="rdRate" min="0.6" max="1.2" step="0.05" /></label>
+            <select id="rdVoice" class="mini-select" title="发音"></select>
+          </div>
         </div>
-        <div class="read-output" id="rdOutput" hidden></div>
       </section>
 
       <!-- GRAMMAR -->
