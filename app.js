@@ -2134,7 +2134,8 @@
   if (gqRestart) gqRestart.addEventListener("click", startGrammarQuiz);
   const gqDone = $("#gqDone");
   if (gqDone) gqDone.addEventListener("click", (e) => { if (e.target.closest("#gqAgain")) startGrammarQuiz(); });
-  $("#rdOutput").addEventListener("click", (e) => {
+  const rdOutputEl = $("#rdOutput");
+  if (rdOutputEl) rdOutputEl.addEventListener("click", (e) => {
     const hl = e.target.closest(".term-hl");
     if (hl) { speak(hl.dataset.term); return; }
     const cz = e.target.closest(".cloze");
