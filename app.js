@@ -1744,6 +1744,30 @@
     "since", "whether", "so", "that", "provided", "pursuant", "subject", "according", "where", "as"]);
   const CHUNK_PREP = new Set(["in", "on", "at", "for", "with", "from", "by", "into", "within",
     "between", "upon", "during", "without", "against", "through", "over", "under"]);
+  // Fixed multi-word phrases common in exchange/clearing rules — kept as one sense
+  // group (never split internally) and treated as a chunk start. Longest match wins.
+  const CHUNK_PHRASES = [
+    "for the avoidance of doubt", "as soon as reasonably practicable", "as soon as practicable",
+    "in accordance with", "subject to the provisions of", "for the purposes of", "for the purpose of",
+    "in connection with", "with respect to", "in respect of", "on behalf of", "in the event that",
+    "in the event of", "to the extent that", "without prejudice to", "in relation to", "by virtue of",
+    "in lieu of", "as the case may be", "in the case of", "in compliance with", "in default of",
+    "notwithstanding anything to the contrary", "subject to", "pursuant to", "provided that",
+    "in the ordinary course of business", "on the basis that", "for the benefit of",
+  ].map((p) => p.split(/\s+/)).sort((a, b) => b.length - a.length);
+  const bareWord = (w) => w.replace(/[^A-Za-z]/g, "").toLowerCase();
+  // Return length (in words) of a fixed phrase starting at index i, else 0.
+  function matchPhrase(words, i) {
+    for (const p of CHUNK_PHRASES) {
+      if (i + p.length > words.length) continue;
+      let ok = true;
+      for (let j = 0; j < p.length; j++) {
+        if (bareWord(words[i + j]) !== p[j]) { ok = false; break; }
+      }
+      if (ok) return p.length;
+    }
+    return 0;
+  }
   function chunkSentence(s) {
     const words = String(s).split(/\s+/).filter(Boolean);
     if (words.length <= 4) return [s];
@@ -1751,8 +1775,18 @@
     let cur = [];
     const flush = () => { if (cur.length) { chunks.push(cur.join(" ")); cur = []; } };
     for (let i = 0; i < words.length; i++) {
+      // Fixed phrase: start a new sense group and keep the whole phrase intact.
+      const pl = matchPhrase(words, i);
+      if (pl) {
+        if (i > 0 && cur.length >= 2) flush();
+        for (let j = 0; j < pl; j++) cur.push(words[i + j]);
+        const last = words[i + pl - 1];
+        i += pl - 1;
+        if (/[,;:—]$/.test(last)) flush();
+        continue;
+      }
       const w = words[i];
-      const bare = w.replace(/[^A-Za-z]/g, "").toLowerCase();
+      const bare = bareWord(w);
       if (i > 0) {
         if (CHUNK_STRONG.has(bare) && cur.length >= 2) flush();
         else if (CHUNK_PREP.has(bare) && cur.length >= 4) flush();
