@@ -703,6 +703,8 @@ code { background: var(--soft); padding: 1px 6px; border-radius: 6px; font-size:
 .ph-main { display: flex; align-items: baseline; gap: 8px; }
 .ph-p { font-size: 16px; font-weight: 600; color: var(--ink); }
 .ph-freq { font-size: 12px; color: var(--muted); }
+.ph-tag { font-size: 11px; color: var(--brand); border: 1px solid var(--line); border-radius: 999px; padding: 1px 8px; }
+.ph-g { font-size: 14px; color: var(--ink); margin: 3px 0; }
 .ph-ex { font-size: 13px; color: var(--muted); line-height: 1.5; margin: 4px 0 8px; }
 .ph-acts { display: flex; gap: 8px; flex-wrap: wrap; }
 

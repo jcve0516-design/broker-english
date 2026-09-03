@@ -2124,12 +2124,31 @@
   /* ---------------------------------------------------------------- phrases */
   // Standalone phrase library mined from the 88 rule PDFs (window.RULE_PHRASES).
   const PHRASES = (window.RULE_PHRASES && Array.isArray(window.RULE_PHRASES.items)) ? window.RULE_PHRASES.items : [];
+  const PH_TOPICS = (window.RULE_PHRASES && Array.isArray(window.RULE_PHRASES.topics)) ? window.RULE_PHRASES.topics : [];
+  const PH_TOPIC_NAME = {};
+  PH_TOPICS.forEach((t) => { PH_TOPIC_NAME[t.key] = t.name; });
   const PH_PAGE = 20;
-  const phState = { page: 0, q: "" };
+  const phState = { page: 0, q: "", topic: "__all__", inited: false };
   function phFiltered() {
     const q = phState.q.trim().toLowerCase();
-    if (!q) return PHRASES;
-    return PHRASES.filter((r) => r.p.includes(q) || (r.ex || "").toLowerCase().includes(q));
+    return PHRASES.filter((r) => {
+      if (phState.topic !== "__all__" && r.t !== phState.topic) return false;
+      if (!q) return true;
+      return r.p.includes(q) || (r.g || "").includes(q) || (r.ex || "").toLowerCase().includes(q);
+    });
+  }
+  function phInitTopics() {
+    const sel = $("#phTopicSel");
+    if (!sel || phState.inited) return;
+    const counts = {};
+    PHRASES.forEach((r) => { if (r.t) counts[r.t] = (counts[r.t] || 0) + 1; });
+    sel.innerHTML =
+      `<option value="__all__">全部主题（${PHRASES.length}）</option>` +
+      PH_TOPICS.filter((t) => counts[t.key])
+        .map((t) => `<option value="${escapeHtml(t.key)}">${escapeHtml(t.name)}（${counts[t.key]}）</option>`)
+        .join("");
+    sel.addEventListener("change", (e) => { phState.topic = e.target.value; phState.page = 0; renderPhrases(); });
+    phState.inited = true;
   }
   function inWordbook(p) {
     const w = p.toLowerCase();
@@ -2137,6 +2156,7 @@
   }
   function renderPhrases() {
     const list = $("#phList"); if (!list) return;
+    phInitTopics();
     const items = phFiltered();
     const pages = Math.max(1, Math.ceil(items.length / PH_PAGE));
     if (phState.page >= pages) phState.page = 0;
@@ -2151,8 +2171,10 @@
       .slice(start, start + PH_PAGE)
       .map((r) => {
         const wb = inWordbook(r.p);
+        const tag = r.t && PH_TOPIC_NAME[r.t] ? `<span class="ph-tag">${escapeHtml(PH_TOPIC_NAME[r.t])}</span>` : "";
         return `<div class="ph-item">
-          <div class="ph-main"><span class="ph-p">${escapeHtml(r.p)}</span><span class="ph-freq" title="在规则语料中出现次数">×${r.n}</span></div>
+          <div class="ph-main"><span class="ph-p">${escapeHtml(r.p)}</span>${tag}<span class="ph-freq" title="在规则语料中出现次数">×${r.n}</span></div>
+          ${r.g ? `<div class="ph-g">${escapeHtml(r.g)}</div>` : ""}
           ${r.ex ? `<div class="ph-ex">${highlightTerms(r.ex, false)}</div>` : ""}
           <div class="ph-acts">
             <button class="btn ghost small" data-ph-say="${escapeHtml(r.p)}">🔊 朗读</button>
@@ -2170,7 +2192,7 @@
     const r = PHRASES.find((x) => x.p === p); if (!r) return;
     if (inWordbook(p)) return;
     state.cards.push({
-      id: uid(), front: p, back: "", example: r.ex || "", category: "生词本",
+      id: uid(), front: p, back: r.g || "", example: r.ex || "", category: "生词本",
       reps: 0, ease: 2.5, interval: 0, due: Date.now(), lapses: 0, correct: 0, seen: 0,
     });
     save();
