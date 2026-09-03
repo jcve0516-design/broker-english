@@ -87,8 +87,32 @@
   // Text-to-speech pronunciation via the Web Speech API (no network needed).
   const TTS = window.speechSynthesis;
   let VOICES = [];
+  // Prefer a real US English voice so playback sounds American, not British/AU.
+  function pickUSVoice() {
+    if (!VOICES.length) return "";
+    const us = VOICES.filter((v) => /en[-_]US/i.test(v.lang));
+    const pool = us.length ? us : VOICES.filter((v) => /^en/i.test(v.lang));
+    if (!pool.length) return "";
+    const preferred = /Samantha|Alex|Aaron|Nicky|Ava|Allison|Google US English|United States|Zira|David|Aria|Jenny|Guy/i;
+    return (pool.find((v) => preferred.test(v.name)) || pool[0]).name;
+  }
+  // Resolve the utterance voice: honor explicit choice, otherwise fall back to US.
+  function resolveVoice(name) {
+    const chosen = VOICES.find((x) => x.name === name);
+    if (chosen) return chosen;
+    const us = pickUSVoice();
+    return VOICES.find((x) => x.name === us) || null;
+  }
   function refreshVoices() {
     VOICES = TTS ? TTS.getVoices() : [];
+    // Default both global and reading voices to American on first run.
+    if (VOICES.length) {
+      const us = pickUSVoice();
+      let changed = false;
+      if (!state.settings.voice && us) { state.settings.voice = us; changed = true; }
+      if (!state.settings.readVoice && us) { state.settings.readVoice = us; changed = true; }
+      if (changed) save();
+    }
     populateVoiceSelect();
   }
   function speak(text, rate) {
@@ -98,7 +122,7 @@
       const u = new SpeechSynthesisUtterance(String(text));
       u.lang = "en-US";
       u.rate = rate || state.settings.rate || 0.95;
-      const v = VOICES.find((x) => x.name === state.settings.voice);
+      const v = resolveVoice(state.settings.voice);
       if (v) u.voice = v;
       TTS.speak(u);
     } catch (_) {}
@@ -980,10 +1004,17 @@
   function fillVoiceSelect(sel, current) {
     if (!sel) return;
     const en = VOICES.filter((v) => /^en/i.test(v.lang));
-    const list = en.length ? en : VOICES;
+    const list = (en.length ? en : VOICES)
+      .slice()
+      .sort((a, b) => (/(en[-_]US)/i.test(b.lang) ? 1 : 0) - (/(en[-_]US)/i.test(a.lang) ? 1 : 0));
     sel.innerHTML =
-      '<option value="">默认发音</option>' +
-      list.map((v) => `<option value="${escapeHtml(v.name)}">${escapeHtml(v.name)} · ${escapeHtml(v.lang)}</option>`).join("");
+      '<option value="">美式发音（自动）</option>' +
+      list
+        .map((v) => {
+          const us = /en[-_]US/i.test(v.lang) ? "（美式）" : "";
+          return `<option value="${escapeHtml(v.name)}">${escapeHtml(v.name)}${us} · ${escapeHtml(v.lang)}</option>`;
+        })
+        .join("");
     sel.value = current || "";
   }
   function populateVoiceSelect() {
@@ -1726,8 +1757,7 @@
       const u = new SpeechSynthesisUtterance(String(text));
       u.lang = "en-US";
       u.rate = state.settings.readRate || state.settings.rate || 0.95;
-      const vn = state.settings.readVoice || state.settings.voice;
-      const v = VOICES.find((x) => x.name === vn);
+      const v = resolveVoice(state.settings.readVoice || state.settings.voice);
       if (v) u.voice = v;
       TTS.speak(u);
     } catch (_) {}
@@ -1750,14 +1780,13 @@
     rdAutoOn = true;
     const b = $("#rdAuto"); if (b) b.textContent = "⏸ 停止";
     const rate = (state.settings && (state.settings.readRate || state.settings.rate)) || 0.95;
-    const vn = state.settings.readVoice || state.settings.voice;
+    const v = resolveVoice(state.settings.readVoice || state.settings.voice);
     const step = () => {
       if (!rdAutoOn || rdState.si >= rdState.sents.length) { stopAuto(); return; }
       renderReader();
       bumpDaily("listen");
       const u = new SpeechSynthesisUtterance(rdState.sents[rdState.si]);
       u.lang = "en-US"; u.rate = rate;
-      const v = VOICES.find((x) => x.name === vn);
       if (v) u.voice = v;
       u.onend = () => { if (rdAutoOn) { rdState.si++; if (rdState.si < rdState.sents.length) step(); else stopAuto(); } };
       u.onerror = () => { if (rdAutoOn) { rdState.si++; if (rdState.si < rdState.sents.length) step(); else stopAuto(); } };
@@ -1883,6 +1912,37 @@
   }
   const rdVoiceEl = $("#rdVoice");
   if (rdVoiceEl) rdVoiceEl.addEventListener("change", (e) => { state.settings.readVoice = e.target.value; save(); rdSpeakOne("clearing house"); });
+
+  // --- Speed presets (0.5×–1.5×), like a daily-listening app ---
+  function markSpeed(box, val) {
+    if (!box) return;
+    let best = null, bestD = Infinity;
+    box.querySelectorAll(".chip").forEach((c) => {
+      c.classList.remove("active");
+      const d = Math.abs(Number(c.dataset.r) - val);
+      if (d < bestD) { bestD = d; best = c; }
+    });
+    if (best) best.classList.add("active");
+  }
+  function wireSpeedRow(id, get, set, preview, syncEl) {
+    const box = document.getElementById(id);
+    if (!box) return;
+    markSpeed(box, get());
+    box.addEventListener("click", (e) => {
+      const chip = e.target.closest(".chip"); if (!chip) return;
+      const r = Number(chip.dataset.r);
+      set(r); save();
+      markSpeed(box, r);
+      if (syncEl) syncEl.value = r;
+      preview();
+    });
+  }
+  wireSpeedRow("rdSpeed", () => state.settings.readRate || 0.9, (r) => { state.settings.readRate = r; }, () => rdSpeakOne("settlement date"), $("#rdRate"));
+  wireSpeedRow("spkSpeed", () => state.settings.rate || 0.95, (r) => { state.settings.rate = r; }, () => speak("clearing house"), $("#ttsRate"));
+  // Keep chips in sync when the fine-tune sliders move.
+  if (rdRateEl) rdRateEl.addEventListener("input", () => markSpeed(document.getElementById("rdSpeed"), Number(rdRateEl.value)));
+  const ttsRateEl2 = $("#ttsRate");
+  if (ttsRateEl2) ttsRateEl2.addEventListener("input", () => markSpeed(document.getElementById("spkSpeed"), Number(ttsRateEl2.value)));
 
   // Full-library keyword search over paragraph items, grouped by business topic.
   function searchCorpus() {
