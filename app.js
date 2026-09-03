@@ -1754,6 +1754,22 @@
     "in lieu of", "as the case may be", "in the case of", "in compliance with", "in default of",
     "notwithstanding anything to the contrary", "subject to", "pursuant to", "provided that",
     "in the ordinary course of business", "on the basis that", "for the benefit of",
+    // Additions: high-frequency fixed expressions across exchange/clearing rules.
+    "including but not limited to", "including without limitation", "for and on behalf of",
+    "except as otherwise provided", "save as otherwise provided", "unless otherwise agreed",
+    "unless otherwise specified", "unless otherwise provided", "unless otherwise stated",
+    "to the extent permitted by", "to the satisfaction of", "with effect from",
+    "subject to the approval of", "with the approval of", "with the consent of",
+    "in consultation with", "in conjunction with", "in accordance with applicable law",
+    "for the account of", "at the discretion of", "in the discretion of", "at the request of",
+    "in the absence of", "in the interests of", "in the interest of", "in excess of",
+    "on account of", "with a view to", "in whole or in part", "as set out in", "as provided in",
+    "as referred to in", "as specified in", "as defined in", "as described in", "as required by",
+    "from time to time", "for the time being", "by way of", "in lieu thereof", "in order to",
+    "so as to", "in addition to", "on or before", "on or after", "no later than", "not less than",
+    "not more than", "in favour of", "in favor of", "prior to", "subsequent to", "in good faith",
+    "in writing", "where applicable", "if applicable", "as applicable", "mutatis mutandis",
+    "inter alia", "if any",
   ].map((p) => p.split(/\s+/)).sort((a, b) => b.length - a.length);
   const bareWord = (w) => w.replace(/[^A-Za-z]/g, "").toLowerCase();
   // Return length (in words) of a fixed phrase starting at index i, else 0.
