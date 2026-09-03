@@ -1,5 +1,5 @@
 /* Service worker: cache the app shell so it works fully offline once opened. */
-const CACHE = "vocab-trainer-v31";
+const CACHE = "vocab-trainer-v32";
 // Note: corpus.js (~10MB) is intentionally NOT precached here. Bundling it into the
 // install-time addAll made SW updates fail on mobile (large fetch times out → new SW
 // never activates → stale app). The fetch handler below caches it on first load instead.

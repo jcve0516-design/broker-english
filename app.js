@@ -103,16 +103,18 @@
     const us = pickUSVoice();
     return VOICES.find((x) => x.name === us) || null;
   }
+  // Decide the voice for an utterance from a setting value:
+  //   "__system__" -> follow the iPhone/system default (do NOT pin a voice)
+  //   ""           -> auto-pick an American voice
+  //   "<name>"     -> that exact voice (if still installed)
+  function voiceFor(setting) {
+    if (setting === "__system__") return null; // let iOS use the voice chosen in Settings
+    return resolveVoice(setting);
+  }
   function refreshVoices() {
+    // NOTE: do NOT auto-pin a specific voice here. Pinning used to override the
+    // user's own voice choice (incl. the iOS system voice) and make switches "not work".
     VOICES = TTS ? TTS.getVoices() : [];
-    // Default both global and reading voices to American on first run.
-    if (VOICES.length) {
-      const us = pickUSVoice();
-      let changed = false;
-      if (!state.settings.voice && us) { state.settings.voice = us; changed = true; }
-      if (!state.settings.readVoice && us) { state.settings.readVoice = us; changed = true; }
-      if (changed) save();
-    }
     populateVoiceSelect();
   }
   function speak(text, rate) {
@@ -120,9 +122,9 @@
     try {
       TTS.cancel();
       const u = new SpeechSynthesisUtterance(String(text));
-      u.lang = "en-US";
+      if (state.settings.voice !== "__system__") u.lang = "en-US";
       u.rate = rate || state.settings.rate || 0.95;
-      const v = resolveVoice(state.settings.voice);
+      const v = voiceFor(state.settings.voice);
       if (v) u.voice = v;
       TTS.speak(u);
     } catch (_) {}
@@ -1009,7 +1011,8 @@
       .slice()
       .sort((a, b) => (/(en[-_]US)/i.test(b.lang) ? 1 : 0) - (/(en[-_]US)/i.test(a.lang) ? 1 : 0));
     sel.innerHTML =
-      '<option value="">美式发音（自动）</option>' +
+      '<option value="__system__">跟随系统默认（用 iPhone 设置里的语音）</option>' +
+      '<option value="">美式发音（自动挑选）</option>' +
       list
         .map((v) => {
           const us = /en[-_]US/i.test(v.lang) ? "（美式）" : "";
@@ -1850,9 +1853,10 @@
     try {
       TTS.cancel();
       const u = new SpeechSynthesisUtterance(String(text));
-      u.lang = "en-US";
+      const vset = state.settings.readVoice || state.settings.voice;
+      if (vset !== "__system__") u.lang = "en-US";
       u.rate = state.settings.readRate || state.settings.rate || 0.95;
-      const v = resolveVoice(state.settings.readVoice || state.settings.voice);
+      const v = voiceFor(vset);
       if (v) u.voice = v;
       TTS.speak(u);
     } catch (_) {}
@@ -1865,7 +1869,8 @@
     const chunks = chunkSentence(s);
     bumpDaily("listen");
     const rate = state.settings.readRate || state.settings.rate || 0.95;
-    const v = resolveVoice(state.settings.readVoice || state.settings.voice);
+    const vset = state.settings.readVoice || state.settings.voice;
+    const v = voiceFor(vset);
     const spans = () => Array.from(document.querySelectorAll("#rdSents .rd-sent.cur .rd-chunk"));
     let k = 0;
     const clear = () => spans().forEach((el) => el.classList.remove("active"));
@@ -1875,7 +1880,8 @@
       const list = spans();
       if (list[k]) { list[k].classList.add("active"); list[k].scrollIntoView({ block: "nearest" }); }
       const u = new SpeechSynthesisUtterance(chunks[k]);
-      u.lang = "en-US"; u.rate = rate;
+      if (vset !== "__system__") u.lang = "en-US";
+      u.rate = rate;
       if (v) u.voice = v;
       u.onend = () => { k++; setTimeout(step, 180); };
       u.onerror = () => { k++; setTimeout(step, 180); };
@@ -1906,13 +1912,15 @@
     rdAutoOn = true;
     const b = $("#rdAuto"); if (b) b.textContent = "⏸ 停止";
     const rate = (state.settings && (state.settings.readRate || state.settings.rate)) || 0.95;
-    const v = resolveVoice(state.settings.readVoice || state.settings.voice);
+    const vset = state.settings.readVoice || state.settings.voice;
+    const v = voiceFor(vset);
     const step = () => {
       if (!rdAutoOn || rdState.si >= rdState.sents.length) { stopAuto(); return; }
       renderReader();
       bumpDaily("listen");
       const u = new SpeechSynthesisUtterance(rdState.sents[rdState.si]);
-      u.lang = "en-US"; u.rate = rate;
+      if (vset !== "__system__") u.lang = "en-US";
+      u.rate = rate;
       if (v) u.voice = v;
       u.onend = () => { if (rdAutoOn) { rdState.si++; if (rdState.si < rdState.sents.length) step(); else stopAuto(); } };
       u.onerror = () => { if (rdAutoOn) { rdState.si++; if (rdState.si < rdState.sents.length) step(); else stopAuto(); } };
