@@ -196,6 +196,7 @@ for (const [k, v] of Object.entries({
   orders: "订单", information: "信息", item: "项", certain: "特定", version: "版本",
   connect: "通", china: "中国", transferable: "可转让", tradable: "可交易", underlying: "标的",
   redemption: "赎回", subscription: "认购", issuance: "发行", allotment: "配发", quotation: "报价",
+  rulebook: "规则手册",
 })) if (!LEX.has(k)) LEX.set(k, v);
 const ARTICLE = new Set(["the", "a", "an", "etc", "etc.", "'s"]);
 // Compose a gloss from a plain (connector-free) word sequence; articles are dropped.
@@ -234,6 +235,31 @@ function glossOf(p) {
   return compose(words.join(" "));
 }
 
+/* ---- noise filter: drop grams with OCR-garbage / non-word tokens ---- */
+let WORDS = new Set();
+try {
+  WORDS = new Set(fs.readFileSync("/usr/share/dict/words", "utf8").split(/\r?\n/).map((w) => w.trim().toLowerCase()).filter(Boolean));
+} catch (_) {}
+const ABBR = new Set(["jgb", "nzx", "jse", "bme", "krx", "cme", "ice", "lch", "sgx", "tse", "nyse", "asx",
+  "dtcc", "hkex", "hkscc", "jscc", "athex", "euronext", "eurex", "nasdaq", "tadawul", "bist", "otc", "dvp",
+  "rvp", "ccp", "csd", "isin", "cusip", "sedol", "figi", "etf", "nav", "fix", "api", "ipo", "mtf", "aml",
+  "kyc", "aum", "clearnet", "x-clear", "nordic", "baltic", "clearinghouse"]);
+function inWords(w) {
+  if (WORDS.has(w)) return true;
+  if (w.endsWith("ies") && WORDS.has(w.slice(0, -3) + "y")) return true;
+  if (w.endsWith("es") && (WORDS.has(w.slice(0, -2)) || WORDS.has(w.slice(0, -1)))) return true;
+  if (w.endsWith("s") && WORDS.has(w.slice(0, -1))) return true;
+  if (w.endsWith("ed") && (WORDS.has(w.slice(0, -2)) || WORDS.has(w.slice(0, -1)))) return true;
+  if (w.endsWith("ing") && (WORDS.has(w.slice(0, -3)) || WORDS.has(w.slice(0, -3) + "e"))) return true;
+  return false;
+}
+function validToken(w) {
+  if (w.length <= 2 || /\d/.test(w) || w.includes("-")) return true;
+  return inWords(w) || dict.has(w) || LEX.has(w) || ABBR.has(w);
+}
+const noiseFilter = WORDS.size > 0;
+function isNoise(gram) { return noiseFilter && gram.some((w) => !validToken(w)); }
+
 /* ---- count grams ---- */
 const counts = new Map();
 for (const it of items) {
@@ -244,6 +270,7 @@ for (const it of items) {
         const gram = toks.slice(i, i + n);
         if (!ok(gram[0]) || !ok(gram[n - 1])) continue;
         if (gram.some((w) => w.length < 2)) continue;
+        if (isNoise(gram)) continue;
         const key = gram.join(" ");
         counts.set(key, (counts.get(key) || 0) + 1);
       }
