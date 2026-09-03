@@ -725,6 +725,11 @@ code { background: var(--soft); padding: 1px 6px; border-radius: 6px; font-size:
 .speed-row .chip:hover { background: var(--active); }
 .speed-row .chip.active { background: var(--brand); border-color: var(--brand); color: #fff; }
 
+/* Sense-group (意群) chunking during playback */
+.rd-chunk { border-radius: 4px; padding: 0 1px; transition: background .12s ease; }
+.rd-chunk.active { background: var(--brand); color: #fff; box-shadow: 0 0 0 2px var(--brand); }
+.rd-chunk-sep { color: var(--muted); opacity: .55; }
+
 /* Search results: topic group headers */
 .search-group { font-size: 12px; font-weight: 600; color: var(--brand); background: var(--surface-2); padding: 5px 12px; position: sticky; top: 0; }
 
@@ -1006,6 +1011,7 @@ code { background: var(--soft); padding: 1px 6px; border-radius: 6px; font-size:
             <button class="btn" id="rdNext" title="下一句">⏭</button>
             <button class="btn" id="rdAuto">▶️ 连续</button>
             <button class="btn" id="rdMic">🎤 跟读</button>
+            <label class="chk"><input type="checkbox" id="rdChunk" /> 意群断句</label>
             <label class="chk"><input type="checkbox" id="rdCloze" /> 挖空</label>
             <label class="chk"><input type="checkbox" id="rdWordMode" /> 收生词</label>
             <span class="rd-pos muted" id="rdPos"></span>
@@ -3369,14 +3375,58 @@ window.VOCAB_SAMPLES = [{"id":"brokerage-core","name":"券商IT高频术语表",
   function wordSpans(s) {
     return escapeHtml(s).replace(/[A-Za-z][A-Za-z'’\-]*/g, (w) => `<span class="rd-word" data-w="${w}">${w}</span>`);
   }
+  // Split a sentence into sense groups (意群) at grammatical boundaries so playback
+  // can pause/highlight chunk by chunk. Heuristic, offline, tuned for rule-English.
+  const CHUNK_STRONG = new Set(["and", "or", "but", "because", "if", "when", "while", "which",
+    "who", "whom", "whose", "where", "although", "though", "unless", "until", "before", "after",
+    "since", "whether", "so", "that", "provided", "pursuant", "subject", "according", "where", "as"]);
+  const CHUNK_PREP = new Set(["in", "on", "at", "for", "with", "from", "by", "into", "within",
+    "between", "upon", "during", "without", "against", "through", "over", "under"]);
+  function chunkSentence(s) {
+    const words = String(s).split(/\s+/).filter(Boolean);
+    if (words.length <= 4) return [s];
+    const chunks = [];
+    let cur = [];
+    const flush = () => { if (cur.length) { chunks.push(cur.join(" ")); cur = []; } };
+    for (let i = 0; i < words.length; i++) {
+      const w = words[i];
+      const bare = w.replace(/[^A-Za-z]/g, "").toLowerCase();
+      if (i > 0) {
+        if (CHUNK_STRONG.has(bare) && cur.length >= 2) flush();
+        else if (CHUNK_PREP.has(bare) && cur.length >= 4) flush();
+      }
+      cur.push(w);
+      if (/[,;:—]$/.test(w)) flush(); // hard break after punctuation
+    }
+    flush();
+    // Merge chunks shorter than 2 words into the previous one to avoid fragments.
+    const merged = [];
+    for (const c of chunks) {
+      if (merged.length && c.split(/\s+/).length < 2) merged[merged.length - 1] += " " + c;
+      else merged.push(c);
+    }
+    return merged.length ? merged : [s];
+  }
+  function chunkMode() { const el = $("#rdChunk"); return !!(el && el.checked); }
   function renderReader() {
     stopRdRecog();
     const cloze = $("#rdCloze").checked;
     const wb = $("#rdWordMode") && $("#rdWordMode").checked;
+    const chunk = chunkMode();
     $("#rdSents").innerHTML = rdState.sents
-      .map((s, i) => `<span class="rd-sent${i === rdState.si ? " cur" : ""}${wb ? " wb" : ""}" data-i="${i}">${wb ? wordSpans(s) : highlightTerms(s, cloze)}</span>`)
+      .map((s, i) => {
+        const isCur = i === rdState.si;
+        let inner;
+        if (wb) inner = wordSpans(s);
+        else if (chunk && isCur)
+          inner = chunkSentence(s)
+            .map((c, ci) => `<span class="rd-chunk" data-ci="${ci}">${highlightTerms(c, cloze)}</span>`)
+            .join('<span class="rd-chunk-sep"> / </span>');
+        else inner = highlightTerms(s, cloze);
+        return `<span class="rd-sent${isCur ? " cur" : ""}${wb ? " wb" : ""}" data-i="${i}">${inner}</span>`;
+      })
       .join(" ");
-    $("#rdPos").textContent = `第 ${rdState.si + 1} / ${rdState.sents.length} 句${wb ? " · 点词加入生词本" : ""}`;
+    $("#rdPos").textContent = `第 ${rdState.si + 1} / ${rdState.sents.length} 句${wb ? " · 点词加入生词本" : chunk ? " · 意群断句" : ""}`;
     const sr = $("#rdSpkResult"); if (sr) sr.innerHTML = "";
     const cur = $("#rdSents .rd-sent.cur");
     if (cur) cur.scrollIntoView({ block: "nearest" });
@@ -3394,7 +3444,38 @@ window.VOCAB_SAMPLES = [{"id":"brokerage-core","name":"券商IT高频术语表",
       TTS.speak(u);
     } catch (_) {}
   }
-  function playSent(i) { const s = rdState.sents[i]; if (s) { rdSpeakOne(s); bumpDaily("listen"); } }
+  // Play the current sentence chunk by chunk, highlighting each sense group as it speaks.
+  function playChunks(i) {
+    const TTS = window.speechSynthesis;
+    const s = rdState.sents[i];
+    if (!TTS || !s) return;
+    const chunks = chunkSentence(s);
+    bumpDaily("listen");
+    const rate = state.settings.readRate || state.settings.rate || 0.95;
+    const v = resolveVoice(state.settings.readVoice || state.settings.voice);
+    const spans = () => Array.from(document.querySelectorAll("#rdSents .rd-sent.cur .rd-chunk"));
+    let k = 0;
+    const clear = () => spans().forEach((el) => el.classList.remove("active"));
+    const step = () => {
+      clear();
+      if (k >= chunks.length) return;
+      const list = spans();
+      if (list[k]) { list[k].classList.add("active"); list[k].scrollIntoView({ block: "nearest" }); }
+      const u = new SpeechSynthesisUtterance(chunks[k]);
+      u.lang = "en-US"; u.rate = rate;
+      if (v) u.voice = v;
+      u.onend = () => { k++; setTimeout(step, 180); };
+      u.onerror = () => { k++; setTimeout(step, 180); };
+      try { TTS.cancel(); TTS.speak(u); } catch (_) { clear(); }
+    };
+    step();
+  }
+  function playSent(i) {
+    const s = rdState.sents[i];
+    if (!s) return;
+    if (chunkMode()) playChunks(i);
+    else { rdSpeakOne(s); bumpDaily("listen"); }
+  }
   function gotoSent(i) {
     if (i < 0 || i >= rdState.sents.length) return;
     rdState.si = i;
@@ -3478,6 +3559,8 @@ window.VOCAB_SAMPLES = [{"id":"brokerage-core","name":"券商IT高频术语表",
   $("#rdCloze").addEventListener("change", renderReader);
   const rdWordModeEl = $("#rdWordMode");
   if (rdWordModeEl) rdWordModeEl.addEventListener("change", renderReader);
+  const rdChunkEl = $("#rdChunk");
+  if (rdChunkEl) rdChunkEl.addEventListener("change", renderReader);
   $("#rdSents").addEventListener("click", (e) => {
     const wd = e.target.closest(".rd-word"); if (wd) { addToWordbook(wd.dataset.w); return; }
     const term = e.target.closest(".term-hl"); if (term) { speak(term.dataset.term); return; }
