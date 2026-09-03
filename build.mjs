@@ -11,12 +11,14 @@ const js = read("app.js");
 const samples = read("samples.js");
 const corpus = read("corpus.js");
 const grammar = read("grammar.js");
+const phrases = read("phrases.js");
 
 // Guard against an accidental </script> inside the JS breaking the inline block.
 const safeJs = js.replace(/<\/script>/gi, "<\\/script>");
 const safeSamples = samples.replace(/<\/script>/gi, "<\\/script>");
 const safeCorpus = corpus.replace(/<\/script>/gi, "<\\/script>");
 const safeGrammar = grammar.replace(/<\/script>/gi, "<\\/script>");
+const safePhrases = phrases.replace(/<\/script>/gi, "<\\/script>");
 
 // Use function replacers so `$` sequences in the CSS/JS (e.g. the $$ helper)
 // are inserted literally rather than interpreted as replacement patterns.
@@ -33,6 +35,10 @@ html = html.replace(
   () => `<script>\n${safeGrammar}\n</script>`
 );
 html = html.replace(
+  '<script src="phrases.js"></script>',
+  () => `<script>\n${safePhrases}\n</script>`
+);
+html = html.replace(
   '<script src="samples.js"></script>',
   () => `<script>\n${safeSamples}\n</script>`
 );
@@ -46,7 +52,8 @@ if (
   html.includes('src="app.js"') ||
   html.includes('src="samples.js"') ||
   html.includes('src="corpus.js"') ||
-  html.includes('src="grammar.js"')
+  html.includes('src="grammar.js"') ||
+  html.includes('src="phrases.js"')
 ) {
   console.error("WARNING: an asset reference was not inlined; check the placeholders in index.html");
   process.exit(1);

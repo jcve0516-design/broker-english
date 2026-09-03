@@ -445,6 +445,7 @@
     if (name === "browse") renderBrowse();
     if (name === "import") renderSamples();
     if (name === "grammar") renderGrammar();
+    if (name === "phrase") renderPhrases();
   }
 
   document.addEventListener("click", (e) => {
@@ -2118,6 +2119,76 @@
     const hit = e.target.closest(".search-hit"); if (!hit) return;
     $("#rdResults").hidden = true;
     openFromSearch(Number(hit.dataset.i));
+  });
+
+  /* ---------------------------------------------------------------- phrases */
+  // Standalone phrase library mined from the 88 rule PDFs (window.RULE_PHRASES).
+  const PHRASES = (window.RULE_PHRASES && Array.isArray(window.RULE_PHRASES.items)) ? window.RULE_PHRASES.items : [];
+  const PH_PAGE = 20;
+  const phState = { page: 0, q: "" };
+  function phFiltered() {
+    const q = phState.q.trim().toLowerCase();
+    if (!q) return PHRASES;
+    return PHRASES.filter((r) => r.p.includes(q) || (r.ex || "").toLowerCase().includes(q));
+  }
+  function inWordbook(p) {
+    const w = p.toLowerCase();
+    return state.cards.some((c) => (c.front || "").toLowerCase() === w && c.category === "生词本");
+  }
+  function renderPhrases() {
+    const list = $("#phList"); if (!list) return;
+    const items = phFiltered();
+    const pages = Math.max(1, Math.ceil(items.length / PH_PAGE));
+    if (phState.page >= pages) phState.page = 0;
+    const cnt = $("#phCount"); if (cnt) cnt.textContent = `${items.length} 条`;
+    if (!items.length) {
+      list.innerHTML = `<div class="muted" style="padding:12px">${PHRASES.length ? "没有匹配的短语。" : "（短语库为空）"}</div>`;
+      $("#phPager").innerHTML = "";
+      return;
+    }
+    const start = phState.page * PH_PAGE;
+    list.innerHTML = items
+      .slice(start, start + PH_PAGE)
+      .map((r) => {
+        const wb = inWordbook(r.p);
+        return `<div class="ph-item">
+          <div class="ph-main"><span class="ph-p">${escapeHtml(r.p)}</span><span class="ph-freq" title="在规则语料中出现次数">×${r.n}</span></div>
+          ${r.ex ? `<div class="ph-ex">${highlightTerms(r.ex, false)}</div>` : ""}
+          <div class="ph-acts">
+            <button class="btn ghost small" data-ph-say="${escapeHtml(r.p)}">🔊 朗读</button>
+            <button class="btn ghost small" data-ph-add="${escapeHtml(r.p)}" ${wb ? "disabled" : ""}>${wb ? "✓ 已在生词本" : "＋ 生词本"}</button>
+          </div>
+        </div>`;
+      })
+      .join("");
+    $("#phPager").innerHTML =
+      `<button class="btn ghost small" data-pg="prev" ${phState.page === 0 ? "disabled" : ""}>← 上一页</button>` +
+      `<span class="rd-pageinfo">${phState.page + 1} / ${pages}</span>` +
+      `<button class="btn ghost small" data-pg="next" ${phState.page >= pages - 1 ? "disabled" : ""}>下一页 →</button>`;
+  }
+  function addPhraseCard(p) {
+    const r = PHRASES.find((x) => x.p === p); if (!r) return;
+    if (inWordbook(p)) return;
+    state.cards.push({
+      id: uid(), front: p, back: "", example: r.ex || "", category: "生词本",
+      reps: 0, ease: 2.5, interval: 0, due: Date.now(), lapses: 0, correct: 0, seen: 0,
+    });
+    save();
+    renderPhrases();
+  }
+  const phSearchEl = $("#phSearch");
+  if (phSearchEl) phSearchEl.addEventListener("input", (e) => { phState.q = e.target.value; phState.page = 0; renderPhrases(); });
+  const phListEl = $("#phList");
+  if (phListEl) phListEl.addEventListener("click", (e) => {
+    const say = e.target.closest("[data-ph-say]"); if (say) { speak(say.dataset.phSay); return; }
+    const add = e.target.closest("[data-ph-add]"); if (add) { addPhraseCard(add.dataset.phAdd); return; }
+  });
+  const phPagerEl = $("#phPager");
+  if (phPagerEl) phPagerEl.addEventListener("click", (e) => {
+    const b = e.target.closest("[data-pg]"); if (!b) return;
+    if (b.dataset.pg === "prev" && phState.page > 0) phState.page--;
+    else if (b.dataset.pg === "next") phState.page++;
+    renderPhrases();
   });
 
   /* ---------------------------------------------------------------- grammar */

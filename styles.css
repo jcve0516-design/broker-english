@@ -697,6 +697,15 @@ code { background: var(--soft); padding: 1px 6px; border-radius: 6px; font-size:
 .speed-row .chip:hover { background: var(--active); }
 .speed-row .chip.active { background: var(--brand); border-color: var(--brand); color: #fff; }
 
+/* Phrase library */
+.ph-list { display: flex; flex-direction: column; gap: 8px; margin: 10px 0; }
+.ph-item { border: 1px solid var(--line); border-radius: 10px; background: var(--panel); padding: 10px 12px; }
+.ph-main { display: flex; align-items: baseline; gap: 8px; }
+.ph-p { font-size: 16px; font-weight: 600; color: var(--ink); }
+.ph-freq { font-size: 12px; color: var(--muted); }
+.ph-ex { font-size: 13px; color: var(--muted); line-height: 1.5; margin: 4px 0 8px; }
+.ph-acts { display: flex; gap: 8px; flex-wrap: wrap; }
+
 /* Sense-group (意群) chunking during playback */
 .rd-chunk { border-radius: 4px; padding: 0 1px; transition: background .12s ease; }
 .rd-chunk.active { background: var(--brand); color: #fff; box-shadow: 0 0 0 2px var(--brand); }

@@ -1,5 +1,5 @@
 /* Service worker: cache the app shell so it works fully offline once opened. */
-const CACHE = "vocab-trainer-v27";
+const CACHE = "vocab-trainer-v28";
 // Note: corpus.js (~10MB) is intentionally NOT precached here. Bundling it into the
 // install-time addAll made SW updates fail on mobile (large fetch times out → new SW
 // never activates → stale app). The fetch handler below caches it on first load instead.
@@ -9,6 +9,7 @@ const ASSETS = [
   "./styles.css",
   "./app.js",
   "./grammar.js",
+  "./phrases.js",
   "./samples.js",
   "./manifest.webmanifest",
   "./icons/icon-192.png",

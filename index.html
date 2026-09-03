@@ -41,6 +41,7 @@
       <button class="tab" data-view="dict">听写</button>
       <button class="tab" data-view="speak">口语</button>
       <button class="tab" data-view="read">阅读</button>
+      <button class="tab" data-view="phrase">短语库</button>
       <button class="tab" data-view="grammar">句式解析</button>
       <button class="tab" data-view="write">写作</button>
       <button class="tab" data-view="browse">词表</button>
@@ -324,6 +325,18 @@
         </div>
       </section>
 
+      <!-- PHRASES -->
+      <section class="view" id="view-phrase">
+        <h2>短语库 · 规则高频搭配</h2>
+        <p class="muted">从 88 份交易所 / 清算规则中挖出的高频多词搭配（按出现频次排序）。点 🔊 美式朗读，＋ 加入生词本随计划复习。这些是会议 / 邮件 / 读规则最常复用的固定表达。</p>
+        <div class="import-actions read-search">
+          <input type="search" id="phSearch" class="search" placeholder="搜索短语：clearing、settlement、order book…" />
+          <span class="rd-count muted" id="phCount"></span>
+        </div>
+        <div class="ph-list" id="phList"></div>
+        <div class="rd-pager" id="phPager"></div>
+      </section>
+
       <!-- GRAMMAR -->
       <section class="view" id="view-grammar">
         <h2>句式解析 · 规则英语语法拆解</h2>
@@ -492,6 +505,7 @@ settlement = 结算"></textarea>
 
   <script src="corpus.js"></script>
   <script src="grammar.js"></script>
+  <script src="phrases.js"></script>
   <script src="samples.js"></script>
   <script src="app.js"></script>
 </body>
