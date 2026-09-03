@@ -162,6 +162,15 @@ for (const [k, v] of Object.entries({
   "amended with effect": "修订生效", "pursuant to rule": "根据规则", "pursuant to section": "根据本条",
   "commission of the brokerage": "经纪佣金", "hereinafter referred": "以下简称", "operating hours": "运营时间",
   "clearing house rules": "清算所规则", "central securities depository": "中央证券存管机构（CSD）",
+  "long position": "多头持仓", "short position": "空头持仓", "open position": "未平仓头寸",
+  "cayman islands": "开曼群岛", "appeals committee": "上诉委员会", "bme clearing": "BME 清算",
+  "accordance with the rules": "依照本规则", "accordance with rule": "依照规则", "accordance with article": "依照本条",
+  "pursuant to article": "根据本条", "pursuant to the commission": "根据委员会", "set forth in paragraph": "载于本款",
+  "provisions of paragraph": "本款规定", "supplementary provisions": "补充规定", "trading hours": "交易时间",
+  "settlement by delivery": "实物交收", "financial instruments": "金融工具", "equity securities": "股本证券",
+  "debt securities": "债务证券", "listed company": "上市公司", "listed companies": "上市公司",
+  "clearing bank": "清算银行", "custodian bank": "托管银行", "nominee account": "代名人账户",
+  "omnibus account": "综合账户", "house account": "自营账户", "client account": "客户账户",
 })) if (!PMAP.has(k)) PMAP.set(k, v);
 for (const [k, v] of Object.entries({
   sponsored: "保荐", sponsoring: "保荐", settling: "交收", bank: "银行", agency: "机构",
@@ -169,29 +178,60 @@ for (const [k, v] of Object.entries({
   equities: "股票", equity: "权益", effect: "效力", provisions: "条款", translation: "译文",
   third: "第三", amended: "修订", sponsor: "保荐人", settling: "交收", depository: "存管机构",
   brokerage: "经纪", commission: "佣金", decision: "决定", hereinafter: "以下", operator: "运营者",
+  // Exchange / clearing house proper nouns.
+  nasdaq: "纳斯达克", nordic: "北欧", baltic: "波罗的海", euronext: "泛欧交易所",
+  eurex: "欧洲期货交易所", jscc: "日本证券清算公司", hkscc: "香港结算公司", athex: "雅典交易所",
+  nzx: "新西兰交易所", jse: "约翰内斯堡交易所", jgb: "日本国债", clearinghouse: "清算所",
+  asx: "澳洲证券交易所", dtcc: "美国存管信托清算公司", lch: "伦敦清算所", cme: "芝加哥商品交易所",
+  ice: "洲际交易所", tadawul: "沙特证券交易所", bist: "伊斯坦布尔交易所", hkex: "香港交易所",
+  sgx: "新加坡交易所", nyse: "纽约证券交易所", tse: "东京证券交易所", krx: "韩国交易所",
+  // More domain nouns/verbs/adjectives seen in the long tail.
+  contracts: "合约", contract: "合约", insurance: "保险", investor: "投资者", investors: "投资者",
+  transfer: "转让", steering: "督导", revised: "修订", title: "权属", mutual: "共同",
+  prescribed: "规定的", specified: "指定的", traded: "交易的", public: "公开", income: "收益",
+  agent: "代理", client: "客户", clients: "客户", deposit: "保证金", certain: "特定",
+  pertaining: "有关", accordance: "依照", markets: "市场", corporation: "法人", resident: "居民",
+  spot: "现货", forward: "远期", repo: "回购", forth: "列明", including: "包括", provided: "规定",
+  income: "收益", position: "持仓", positions: "持仓", delivery: "交收", order: "订单",
+  orders: "订单", information: "信息", item: "项", certain: "特定", version: "版本",
+  connect: "通", china: "中国", transferable: "可转让", tradable: "可交易", underlying: "标的",
+  redemption: "赎回", subscription: "认购", issuance: "发行", allotment: "配发", quotation: "报价",
 })) if (!LEX.has(k)) LEX.set(k, v);
+const ARTICLE = new Set(["the", "a", "an", "etc", "etc.", "'s"]);
+// Compose a gloss from a plain (connector-free) word sequence; articles are dropped.
+function compose(str) {
+  const ws = str.split(" ").filter((w) => !ARTICLE.has(w));
+  if (!ws.length || ws.some((w) => CONN.has(w))) return "";
+  const parts = ws.map((w) => PMAP.get(w) || look(w));
+  if (parts.every(Boolean)) return parts.map(firstGloss).join("");
+  return "";
+}
+function resolveSide(str) {
+  if (PMAP.has(str)) return PMAP.get(str);
+  const cleaned = str.split(" ").filter((w) => !ARTICLE.has(w)).join(" ");
+  if (PMAP.has(cleaned)) return PMAP.get(cleaned);
+  return look(cleaned) || compose(cleaned);
+}
 function glossOf(p) {
   if (PMAP.has(p)) return PMAP.get(p);
   if (dict.has(p)) return dict.get(p);
-  const words = p.split(" ");
+  const words = p.split(" ").filter((w) => !ARTICLE.has(w));
+  if (!words.length) return "";
   const io = words.indexOf("of");
   if (io > 0 && io < words.length - 1) {
-    const left = words.slice(0, io).join(" "), right = words.slice(io + 1).join(" ");
-    const gl = PMAP.get(left) || look(left), gr = PMAP.get(right) || look(right);
+    const gl = resolveSide(words.slice(0, io).join(" "));
+    const gr = resolveSide(words.slice(io + 1).join(" "));
     if (gl && gr) return firstGloss(gr) + "的" + firstGloss(gl);
     return "";
   }
   const ia = words.indexOf("and");
   if (ia > 0 && ia < words.length - 1) {
-    const l = words.slice(0, ia).join(" "), r2 = words.slice(ia + 1).join(" ");
-    const gl = PMAP.get(l) || look(l), gr = PMAP.get(r2) || look(r2);
+    const gl = resolveSide(words.slice(0, ia).join(" "));
+    const gr = resolveSide(words.slice(ia + 1).join(" "));
     if (gl && gr) return firstGloss(gl) + "和" + firstGloss(gr);
     return "";
   }
-  if (words.some((w) => CONN.has(w))) return "";
-  const parts = words.map((w) => look(w));
-  if (parts.every(Boolean)) return parts.map(firstGloss).join("");
-  return "";
+  return compose(words.join(" "));
 }
 
 /* ---- count grams ---- */
