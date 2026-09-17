@@ -89,6 +89,10 @@
   const TTS = window.speechSynthesis;
   let VOICES = [];
   // Prefer a real US English voice so playback sounds American, not British/AU.
+  // Apple's classic "novelty" voices exposed to web speechSynthesis — robotic/joke
+  // quality; hide them and never auto-pick them. (Ava/Siri/enhanced are NOT exposed to
+  // web pages by iOS, so the best web-usable US voice is Samantha.)
+  const NOVELTY = /\b(albert|bad news|good news|bahh|bells|boing|bubbles|cellos|jester|organ|pipe organ|superstar|trinoids|whisper|wobble|zarvox|deranged|hysterical|princess|ralph|fred|junior|kathy|zarvox|hysterical)\b/i;
   function pickUSVoice() {
     if (!VOICES.length) return "";
     const us = VOICES.filter((v) => /en[-_]US/i.test(v.lang));
@@ -106,6 +110,7 @@
       if (/premium/.test(n)) s += 30;
       else if (/enhanced/.test(n)) s += 20;
       if (/compact/.test(n)) s -= 25;
+      if (NOVELTY.test(n)) s -= 200;
       return s;
     };
     return pool.slice().sort((a, b) => score(b) - score(a))[0].name;
@@ -1048,7 +1053,8 @@
   // --- TTS voice + speed controls (shared by all study modes) ---
   function fillVoiceSelect(sel, current) {
     if (!sel) return;
-    const en = VOICES.filter((v) => /^en/i.test(v.lang));
+    let en = VOICES.filter((v) => /^en/i.test(v.lang) && !NOVELTY.test(v.name));
+    if (!en.length) en = VOICES.filter((v) => /^en/i.test(v.lang)); // fallback if all filtered
     const list = (en.length ? en : VOICES)
       .slice()
       .sort((a, b) => (/(en[-_]US)/i.test(b.lang) ? 1 : 0) - (/(en[-_]US)/i.test(a.lang) ? 1 : 0));
