@@ -20,6 +20,7 @@
   if (typeof state.settings.remind !== "boolean") state.settings.remind = false;
   if (typeof state.settings.readRate !== "number") state.settings.readRate = 0.9;
   if (typeof state.settings.readVoice !== "string") state.settings.readVoice = "";
+  if (!["short", "medium", "long"].includes(state.settings.pausePreset)) state.settings.pausePreset = "medium";
   if (state.settings.theme !== "light" && state.settings.theme !== "dark") {
     state.settings.theme =
       window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches
@@ -1850,6 +1851,13 @@
     return merged.length ? merged : [s];
   }
   function chunkMode() { const el = $("#rdChunk"); return !!(el && el.checked); }
+  // Pause lengths (ms) between sense groups, after punctuation, and between sentences.
+  function pauseGaps() {
+    const p = (state.settings && state.settings.pausePreset) || "medium";
+    if (p === "short") return { base: 90, punct: 200, sent: 160 };
+    if (p === "long") return { base: 300, punct: 560, sent: 440 };
+    return { base: 170, punct: 340, sent: 260 };
+  }
   function renderReader() {
     stopRdRecog();
     const cloze = $("#rdCloze").checked;
@@ -1910,7 +1918,8 @@
       u.rate = rate;
       if (v) u.voice = v;
       // Longer pause after punctuation, short breath between plain sense groups.
-      const gap = /[,;:—]$/.test(chunks[k]) ? 340 : 170;
+      const G = pauseGaps();
+      const gap = /[,;:—]$/.test(chunks[k]) ? G.punct : G.base;
       u.onend = () => { k++; setTimeout(step, gap); };
       u.onerror = () => { k++; setTimeout(step, gap); };
       try { TTS.cancel(); TTS.speak(u); } catch (_) { clear(); }
@@ -1960,7 +1969,8 @@
         if (vset !== "__system__") u.lang = "en-US";
         u.rate = rate;
         if (v) u.voice = v;
-        const gap = /[,;:—]$/.test(chunks[k]) ? 340 : 170;
+        const G = pauseGaps();
+        const gap = /[,;:—]$/.test(chunks[k]) ? G.punct : G.base;
         u.onend = () => { k++; setTimeout(stepChunk, gap); };
         u.onerror = () => { k++; setTimeout(stepChunk, gap); };
         try { TTS.cancel(); TTS.speak(u); } catch (_) { stopAuto(); }
@@ -1974,7 +1984,7 @@
       speakSentence(() => {
         if (!rdAutoOn) return;
         rdState.si++;
-        if (rdState.si < rdState.sents.length) setTimeout(step, 260); // breath between sentences
+        if (rdState.si < rdState.sents.length) setTimeout(step, pauseGaps().sent); // breath between sentences
         else stopAuto();
       });
     };
@@ -2034,6 +2044,19 @@
   if (rdWordModeEl) rdWordModeEl.addEventListener("change", renderReader);
   const rdChunkEl = $("#rdChunk");
   if (rdChunkEl) rdChunkEl.addEventListener("change", renderReader);
+  // Pause-length presets (short / medium / long) for phrase-by-phrase playback.
+  const rdPauseEl = $("#rdPause");
+  if (rdPauseEl) {
+    const markPause = () => rdPauseEl.querySelectorAll(".chip").forEach((c) =>
+      c.classList.toggle("active", c.dataset.p === (state.settings.pausePreset || "medium")));
+    markPause();
+    rdPauseEl.addEventListener("click", (e) => {
+      const chip = e.target.closest(".chip"); if (!chip) return;
+      state.settings.pausePreset = chip.dataset.p; save();
+      markPause();
+      playSent(rdState.si); // preview new rhythm
+    });
+  }
   $("#rdSents").addEventListener("click", (e) => {
     const wd = e.target.closest(".rd-word"); if (wd) { addToWordbook(wd.dataset.w); return; }
     const term = e.target.closest(".term-hl"); if (term) { speak(term.dataset.term); return; }
