@@ -1770,8 +1770,21 @@ window.VOCAB_SAMPLES = [{"id":"brokerage-core","name":"券商IT高频术语表",
     const us = VOICES.filter((v) => /en[-_]US/i.test(v.lang));
     const pool = us.length ? us : VOICES.filter((v) => /^en/i.test(v.lang));
     if (!pool.length) return "";
-    const preferred = /Samantha|Alex|Aaron|Nicky|Ava|Allison|Google US English|United States|Zira|David|Aria|Jenny|Guy/i;
-    return (pool.find((v) => preferred.test(v.name)) || pool[0]).name;
+    // Prefer the most natural US voices — Ava first, then Samantha, then other neural
+    // voices; reward Premium/Enhanced variants and penalize the robotic "compact" ones.
+    const score = (v) => {
+      const n = (v.name || "").toLowerCase();
+      let s = 0;
+      if (/\bava\b/.test(n)) s += 100;
+      else if (/samantha/.test(n)) s += 60;
+      else if (/\b(nathan|evan|zoe|allison|susan|tom|nicky|joelle|noelle)\b/.test(n)) s += 45;
+      else if (/\b(alex|aaron|fred|google us english|aria|jenny|guy|zira|david)\b/.test(n)) s += 30;
+      if (/premium/.test(n)) s += 30;
+      else if (/enhanced/.test(n)) s += 20;
+      if (/compact/.test(n)) s -= 25;
+      return s;
+    };
+    return pool.slice().sort((a, b) => score(b) - score(a))[0].name;
   }
   // Resolve the utterance voice: honor explicit choice, otherwise fall back to US.
   function resolveVoice(name) {
