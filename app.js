@@ -1392,27 +1392,24 @@
   function startSpeak() {
     $("#spkDone").hidden = true;
     $("#spkStage").hidden = false;
-    if (!SpeechRec) {
-      $("#spkStage").hidden = true;
-      $("#spkDone").hidden = false;
-      $("#spkDone").innerHTML =
-        `<h3>当前浏览器不支持语音识别</h3><p class="muted">口语评分依赖浏览器的语音识别能力，建议用 Chrome / Edge 打开并允许麦克风权限。</p>`;
-      $("#spkProgress").textContent = "0 / 0";
-      return;
-    }
     const mode = speakMode();
     const maxLen = mode === "sentence" ? 120 : 40;
-    const pool = activeCards().filter((c) => {
+    let pool = activeCards().filter((c) => {
       const t = listenText(c, mode);
       return t && t.length <= maxLen;
     });
+    // Fallback: with no user cards, practice with the built-in phrase library so 口语 is never empty.
+    if (!pool.length && typeof PHRASES !== "undefined" && PHRASES && PHRASES.length) {
+      pool = PHRASES.slice(0, 300)
+        .map((r) => ({ front: r.p, back: r.g || "", example: r.ex || "" }))
+        .filter((c) => { const t = listenText(c, mode); return t && t.length <= maxLen; });
+    }
     spkQueue = shuffle(pool);
     spkIndex = 0; spkScores = [];
     $("#spkAvg").textContent = "0";
     renderSpeak();
   }
   function renderSpeak() {
-    if (!SpeechRec) return;
     stopRecog();
     const stage = $("#spkStage"), done = $("#spkDone");
     if (!spkQueue.length) {
@@ -1440,9 +1437,13 @@
     $("#spkProgress").textContent = `${spkIndex + 1} / ${spkQueue.length}`;
     $("#spkPrompt").textContent = target;
     $("#spkCn").textContent = card.back || "";
-    $("#spkHeard").innerHTML = `<span class="ph">点击麦克风开始朗读…</span>`;
+    const mic = $("#spkMic");
+    if (mic) mic.style.display = SpeechRec ? "" : "none";
+    $("#spkHeard").innerHTML = SpeechRec
+      ? `<span class="ph">点击麦克风开始朗读…</span>`
+      : `<span class="ph">此设备不支持语音识别（无法自动打分）。点 🔊 范读，跟读后点「下一个」。</span>`;
     $("#spkResult").textContent = "";
-    $("#spkNext").hidden = true;
+    $("#spkNext").hidden = SpeechRec ? true : false; // no scoring -> allow manual advance
     updateMicUI();
     speak(target); // reference read-aloud first
   }
@@ -2969,13 +2970,8 @@
   });
 
   /* ----------------------------------------------------------------- init */
-  if (!SpeechRec) {
-    // No speech recognition: hide the speaking entry points.
-    const t = document.querySelector('.tab[data-view="speak"]');
-    if (t) t.style.display = "none";
-    const q = document.getElementById("speakQuick");
-    if (q) q.style.display = "none";
-  }
+  // Even without speech recognition (e.g. iOS Safari), keep 口语 available as a
+  // listen-and-repeat drill (范读); the mic scoring UI hides itself when unsupported.
   applyTheme();
   initReading();
   renderCategories();
