@@ -1230,10 +1230,16 @@
     }
     const mode = dictMode();
     const maxLen = mode === "sentence" ? 120 : 40;
-    const pool = activeCards().filter((c) => {
+    let pool = activeCards().filter((c) => {
       const t = listenText(c, mode);
       return t && t.length <= maxLen;
     });
+    // Fallback: with no user cards, dictate from the built-in phrase library.
+    if (!pool.length && typeof PHRASES !== "undefined" && PHRASES && PHRASES.length) {
+      pool = PHRASES.slice(0, 300)
+        .map((r) => ({ front: r.p, back: r.g || "", example: r.ex || "" }))
+        .filter((c) => { const t = listenText(c, mode); return t && t.length <= maxLen; });
+    }
     dtQueue = shuffle(pool);
     dtIndex = 0; dtScore = 0; dtAnswered = false;
     $("#dtScore").textContent = "0";
