@@ -1794,16 +1794,31 @@ window.VOCAB_SAMPLES = [{"id":"brokerage-core","name":"券商IT高频术语表",
     VOICES = TTS ? TTS.getVoices() : [];
     populateVoiceSelect();
   }
+  // Speak text phrase-by-phrase (sense groups + pauses) for natural, non-robotic
+  // prosody. Shared by 口语范读 / 听写 / 短语库 / previews via the global voice + pause settings.
+  // chunkSentence / pauseGaps / voiceFor are hoisted function declarations (safe at call time).
   function speak(text, rate) {
     if (!TTS || !text) return;
     try {
       TTS.cancel();
-      const u = new SpeechSynthesisUtterance(String(text));
-      if (state.settings.voice !== "__system__") u.lang = "en-US";
-      u.rate = rate || state.settings.rate || 0.95;
-      const v = voiceFor(state.settings.voice);
-      if (v) u.voice = v;
-      TTS.speak(u);
+      const chunks = chunkSentence(String(text));
+      const r = rate || state.settings.rate || 0.95;
+      const vset = state.settings.voice;
+      const v = voiceFor(vset);
+      let k = 0;
+      const step = () => {
+        if (k >= chunks.length) return;
+        const u = new SpeechSynthesisUtterance(chunks[k]);
+        if (vset !== "__system__") u.lang = "en-US";
+        u.rate = r;
+        if (v) u.voice = v;
+        const G = pauseGaps();
+        const gap = /[,;:—]$/.test(chunks[k]) ? G.punct : G.base;
+        u.onend = () => { k++; setTimeout(step, gap); };
+        u.onerror = () => { k++; setTimeout(step, gap); };
+        TTS.speak(u);
+      };
+      step();
     } catch (_) {}
   }
 
