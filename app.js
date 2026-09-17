@@ -1081,6 +1081,11 @@
   if (TTS) {
     refreshVoices();
     TTS.onvoiceschanged = refreshVoices;
+    // iOS Safari loads the voice list lazily (often only after a gesture / first speak),
+    // so newly downloaded voices (e.g. Ava) may not appear immediately. Re-scan a few times
+    // and once after the first user interaction to pick them up.
+    [400, 1200, 3000].forEach((t) => setTimeout(refreshVoices, t));
+    document.addEventListener("pointerdown", () => setTimeout(refreshVoices, 250), { once: true });
   } else {
     // No speech support: hide audio-dependent controls and the dictation entry.
     ["fcSpeak", "ttsVoice", "ttsRate", "fcAutoSpeak"].forEach((id) => {
@@ -2151,6 +2156,18 @@
   }
   const rdVoiceEl = $("#rdVoice");
   if (rdVoiceEl) rdVoiceEl.addEventListener("change", (e) => { state.settings.readVoice = e.target.value; save(); rdSpeakOne("clearing house"); });
+  const rdVoiceRefreshEl = $("#rdVoiceRefresh");
+  if (rdVoiceRefreshEl) rdVoiceRefreshEl.addEventListener("click", () => {
+    // Nudge iOS to (re)load voices, then repopulate the selects.
+    try { window.speechSynthesis && window.speechSynthesis.getVoices(); } catch (_) {}
+    setTimeout(() => {
+      refreshVoices();
+      const enUS = VOICES.filter((v) => /en[-_]US/i.test(v.lang));
+      const hasAva = VOICES.some((v) => /\bava\b/i.test(v.name));
+      const sr = $("#rdSpkResult");
+      if (sr) sr.textContent = `已刷新：共 ${VOICES.length} 个语音（美式 ${enUS.length} 个）${hasAva ? "，已检测到 Ava ✓" : "，未检测到 Ava"}`;
+    }, 200);
+  });
 
   // --- Speed presets (0.5×–1.5×), like a daily-listening app ---
   function markSpeed(box, val) {
