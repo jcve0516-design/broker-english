@@ -3361,7 +3361,12 @@ window.VOCAB_SAMPLES = [{"id":"brokerage-core","name":"券商IT高频术语表",
   function initReading() {
     const sel = $("#rdTopicSel");
     if (!sel) return;
-    if (!RREAD.topics.length) { sel.innerHTML = "<option>（无语料）</option>"; return; }
+    if (!RREAD.topics.length) {
+      sel.innerHTML = "<option>（语料未加载）</option>";
+      const list = $("#rdList");
+      if (list) list.innerHTML = `<div class="muted" style="padding:12px">阅读语料未加载成功（多半是更新时网络中断）。请在<b>联网</b>状态下刷新本页一次即可恢复，之后可离线使用。</div>`;
+      return;
+    }
     sel.innerHTML =
       `<option value="__fav__">★ 我的收藏（${(state.favReads || []).length}）</option>` +
       RREAD.topics
