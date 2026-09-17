@@ -1909,17 +1909,21 @@
       if (vset !== "__system__") u.lang = "en-US";
       u.rate = rate;
       if (v) u.voice = v;
-      u.onend = () => { k++; setTimeout(step, 180); };
-      u.onerror = () => { k++; setTimeout(step, 180); };
+      // Longer pause after punctuation, short breath between plain sense groups.
+      const gap = /[,;:—]$/.test(chunks[k]) ? 340 : 170;
+      u.onend = () => { k++; setTimeout(step, gap); };
+      u.onerror = () => { k++; setTimeout(step, gap); };
       try { TTS.cancel(); TTS.speak(u); } catch (_) { clear(); }
     };
     step();
   }
+  // Always play a sentence phrase-by-phrase so it pauses at grammatical boundaries
+  // (natural phrasing) instead of reading the whole line in one robotic breath.
+  // The 意群断句 toggle only controls the on-screen " / " split + per-chunk highlight.
   function playSent(i) {
     const s = rdState.sents[i];
     if (!s) return;
-    if (chunkMode()) playChunks(i);
-    else { rdSpeakOne(s); bumpDaily("listen"); }
+    playChunks(i);
   }
   function gotoSent(i) {
     if (i < 0 || i >= rdState.sents.length) return;
@@ -1934,23 +1938,45 @@
     const b = $("#rdAuto"); if (b) b.textContent = "▶️ 连续";
   }
   function startAuto() {
-    if (!window.speechSynthesis) return;
+    const TTS = window.speechSynthesis;
+    if (!TTS) return;
     rdAutoOn = true;
     const b = $("#rdAuto"); if (b) b.textContent = "⏸ 停止";
     const rate = (state.settings && (state.settings.readRate || state.settings.rate)) || 0.95;
     const vset = state.settings.readVoice || state.settings.voice;
     const v = voiceFor(vset);
+    const spans = () => Array.from(document.querySelectorAll("#rdSents .rd-sent.cur .rd-chunk"));
+    // Speak one sentence phrase-by-phrase, then call onDone.
+    const speakSentence = (onDone) => {
+      const chunks = chunkSentence(rdState.sents[rdState.si]);
+      let k = 0;
+      const stepChunk = () => {
+        if (!rdAutoOn) return;
+        spans().forEach((el) => el.classList.remove("active"));
+        if (k >= chunks.length) { onDone(); return; }
+        const list = spans();
+        if (list[k]) { list[k].classList.add("active"); list[k].scrollIntoView({ block: "nearest" }); }
+        const u = new SpeechSynthesisUtterance(chunks[k]);
+        if (vset !== "__system__") u.lang = "en-US";
+        u.rate = rate;
+        if (v) u.voice = v;
+        const gap = /[,;:—]$/.test(chunks[k]) ? 340 : 170;
+        u.onend = () => { k++; setTimeout(stepChunk, gap); };
+        u.onerror = () => { k++; setTimeout(stepChunk, gap); };
+        try { TTS.cancel(); TTS.speak(u); } catch (_) { stopAuto(); }
+      };
+      stepChunk();
+    };
     const step = () => {
       if (!rdAutoOn || rdState.si >= rdState.sents.length) { stopAuto(); return; }
       renderReader();
       bumpDaily("listen");
-      const u = new SpeechSynthesisUtterance(rdState.sents[rdState.si]);
-      if (vset !== "__system__") u.lang = "en-US";
-      u.rate = rate;
-      if (v) u.voice = v;
-      u.onend = () => { if (rdAutoOn) { rdState.si++; if (rdState.si < rdState.sents.length) step(); else stopAuto(); } };
-      u.onerror = () => { if (rdAutoOn) { rdState.si++; if (rdState.si < rdState.sents.length) step(); else stopAuto(); } };
-      try { window.speechSynthesis.cancel(); window.speechSynthesis.speak(u); } catch (_) { stopAuto(); }
+      speakSentence(() => {
+        if (!rdAutoOn) return;
+        rdState.si++;
+        if (rdState.si < rdState.sents.length) setTimeout(step, 260); // breath between sentences
+        else stopAuto();
+      });
     };
     step();
   }
