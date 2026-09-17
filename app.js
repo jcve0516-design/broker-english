@@ -392,6 +392,18 @@
     for (const c of state.cards) map.set(c.category, (map.get(c.category) || 0) + 1);
     return Array.from(map.entries());
   }
+  // Built-in fallback cards from the phrase library, used when the user has no
+  // vocabulary loaded so study modes work out-of-the-box. needGloss=true keeps only
+  // phrases that have a Chinese gloss (for quiz options / flashcard backs).
+  function phraseCards(needGloss) {
+    if (typeof PHRASES === "undefined" || !PHRASES || !PHRASES.length) return [];
+    let src = PHRASES;
+    if (needGloss) src = src.filter((r) => r.g);
+    return src.slice(0, 300).map((r) => ({
+      id: "ph_" + r.p.replace(/\s+/g, "_"), front: r.p, back: r.g || "", example: r.ex || "",
+      category: "短语库", reps: 0, ease: 2.5, interval: 0, due: Date.now(), lapses: 0, correct: 0, seen: 0,
+    }));
+  }
   function activeCards() {
     if (!selectedCats.size) return state.cards;
     return state.cards.filter((c) => selectedCats.has(c.category));
@@ -917,6 +929,7 @@
     const dueOnly = $("#fcDueOnly").checked;
     let pool = activeCards();
     if (dueOnly) pool = dueCards(pool);
+    if (!pool.length && !dueOnly) pool = phraseCards(true); // out-of-the-box fallback
     fcQueue = $("#fcHard").checked
       ? pool.slice().sort((a, b) => difficultyScore(b) - difficultyScore(a))
       : shuffle(pool);
@@ -1053,9 +1066,12 @@
   }
 
   /* ------------------------------------------------------------------ quiz */
-  let qzQueue = [], qzIndex = 0, qzScore = 0;
+  let qzQueue = [], qzIndex = 0, qzScore = 0, qzPool = [];
   function startQuiz() {
-    qzQueue = shuffle(activeCards()).slice(0, 20);
+    let base = activeCards();
+    if (!base.length) base = phraseCards(true); // out-of-the-box fallback
+    qzPool = base;
+    qzQueue = shuffle(base).slice(0, 20);
     qzIndex = 0; qzScore = 0;
     $("#qzScore").textContent = "0";
     $("#qzDone").hidden = true;
@@ -1087,8 +1103,9 @@
     const answerField = reverse ? "front" : "back";
     const correct = card[answerField] || "—";
     // distractors from same pool
+    const distractorPool = (qzPool && qzPool.length) ? qzPool : state.cards;
     const others = shuffle(
-      state.cards.filter((c) => c !== card && (c[answerField] || "") && c[answerField] !== correct)
+      distractorPool.filter((c) => c !== card && (c[answerField] || "") && c[answerField] !== correct)
     );
     const optSet = [];
     const seen = new Set([correct]);
@@ -1132,7 +1149,9 @@
   let spQueue = [], spIndex = 0, spScore = 0, spAnswered = false;
   function startSpell() {
     // only cards that have an english front worth typing
-    spQueue = shuffle(activeCards().filter((c) => c.front && c.front.length <= 40));
+    let base = activeCards().filter((c) => c.front && c.front.length <= 40);
+    if (!base.length) base = phraseCards(false).filter((c) => c.front && c.front.length <= 40);
+    spQueue = shuffle(base);
     spIndex = 0; spScore = 0; spAnswered = false;
     $("#spScore").textContent = "0";
     $("#spDone").hidden = true;
