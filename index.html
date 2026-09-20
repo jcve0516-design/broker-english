@@ -42,6 +42,7 @@
       <button class="tab" data-view="speak">口语</button>
       <button class="tab" data-view="read">阅读</button>
       <button class="tab" data-view="phrase">短语库</button>
+      <button class="tab" data-view="dialogue">对话学习</button>
       <button class="tab" data-view="grammar">句式解析</button>
       <button class="tab" data-view="write">写作</button>
       <button class="tab" data-view="browse">词表</button>
@@ -347,6 +348,24 @@
         <div class="rd-pager" id="phPager"></div>
       </section>
 
+      <!-- DIALOGUE -->
+      <section class="view" id="view-dialogue">
+        <h2>对话学习 · 真实会议英语</h2>
+        <p class="muted">来自真实英语会议的对话，Whisper 精准转写 + 润色 + 中文对照。每句可听<b>原音</b>（真人）或<b>范读</b>（清晰跟读），逐句练会议交流表达。</p>
+        <div class="import-actions read-picker">
+          <select id="dlMeetingSel" class="mini-select" title="选择会议"></select>
+          <span class="rd-count muted" id="dlCount"></span>
+        </div>
+        <div class="speed-row" id="dlBar">
+          <button type="button" class="btn ghost small" id="dlPlayAll">▶️ 连续听原音</button>
+          <button type="button" class="btn ghost small" id="dlStop">⏹ 停</button>
+          <label class="chk"><input type="checkbox" id="dlHideEn" /> 遮英文（听力测试）</label>
+          <label class="chk"><input type="checkbox" id="dlHideZh" /> 遮中文</label>
+        </div>
+        <div class="dl-list" id="dlList"></div>
+        <audio id="dlAudio" preload="none" style="display:none"></audio>
+      </section>
+
       <!-- GRAMMAR -->
       <section class="view" id="view-grammar">
         <h2>句式解析 · 规则英语语法拆解</h2>
@@ -516,6 +535,7 @@ settlement = 结算"></textarea>
   <script src="corpus.js"></script>
   <script src="grammar.js"></script>
   <script src="phrases.js"></script>
+  <script src="dialogues.js"></script>
   <script src="samples.js"></script>
   <script src="app.js"></script>
 </body>

@@ -494,6 +494,8 @@
     if (name === "import") renderSamples();
     if (name === "grammar") renderGrammar();
     if (name === "phrase") renderPhrases();
+    if (name === "dialogue") renderDialogues();
+    if (name !== "dialogue") { try { dlStopAudio(); } catch (_) {} }
   }
 
   document.addEventListener("click", (e) => {
@@ -2350,6 +2352,106 @@
     if (b.dataset.pg === "prev" && phState.page > 0) phState.page--;
     else if (b.dataset.pg === "next") phState.page++;
     renderPhrases();
+  });
+
+  /* --------------------------------------------------------------- dialogue */
+  // Real-meeting dialogues (window.RULE_DIALOGUES). Each turn: {sp,en,pol,zh,s,e}.
+  const DIALOGUES = (window.RULE_DIALOGUES && Array.isArray(window.RULE_DIALOGUES.meetings)) ? window.RULE_DIALOGUES.meetings : [];
+  const dlState = { mi: 0, inited: false, playingAll: false, stopAt: 0 };
+  function dlAudioEl() { return $("#dlAudio"); }
+  function dlCurrentMeeting() { return DIALOGUES[dlState.mi] || null; }
+  function dlEnsureAudioSrc(m) {
+    const a = dlAudioEl();
+    if (!a || !m || !m.audio) return;
+    const want = m.audio; // relative path, cached on-demand into vt-data
+    if (a.getAttribute("data-key") !== m.id) { a.src = want; a.setAttribute("data-key", m.id); }
+  }
+  function dlStopAudio() {
+    dlState.playingAll = false;
+    const a = dlAudioEl(); if (a) { try { a.pause(); } catch (_) {} }
+  }
+  function dlPlayRange(s, e) {
+    const m = dlCurrentMeeting(); if (!m) return;
+    const a = dlAudioEl(); if (!a) return;
+    dlEnsureAudioSrc(m);
+    dlState.stopAt = e;
+    const start = () => { try { a.currentTime = s; a.play(); } catch (_) {} };
+    if (a.readyState >= 1) start();
+    else { a.addEventListener("loadedmetadata", start, { once: true }); try { a.load(); } catch (_) {} }
+    bumpDaily("listen");
+  }
+  function dlInitMeetings() {
+    const sel = $("#dlMeetingSel");
+    if (!sel || dlState.inited) return;
+    if (!DIALOGUES.length) { sel.innerHTML = "<option>（暂无对话，稍后更新）</option>"; return; }
+    sel.innerHTML = DIALOGUES.map((m, i) => `<option value="${i}">${escapeHtml(m.title || m.id)}</option>`).join("");
+    sel.addEventListener("change", (e) => { dlStopAudio(); dlState.mi = Number(e.target.value) || 0; renderDialogues(); });
+    // one shared audio time-guard: stop when a turn's end is reached (unless continuous play)
+    const a = dlAudioEl();
+    if (a) a.addEventListener("timeupdate", () => {
+      if (!dlState.playingAll && dlState.stopAt && a.currentTime >= dlState.stopAt) { try { a.pause(); } catch (_) {} dlState.stopAt = 0; }
+    });
+    dlState.inited = true;
+  }
+  function renderDialogues() {
+    const list = $("#dlList"); if (!list) return;
+    dlInitMeetings();
+    const m = dlCurrentMeeting();
+    const cnt = $("#dlCount");
+    if (!m) { list.innerHTML = `<div class="muted" style="padding:12px">对话内容正在制作中，稍后更新。</div>`; if (cnt) cnt.textContent = ""; return; }
+    if (cnt) cnt.textContent = `${m.turns.length} 句`;
+    const hideEn = $("#dlHideEn") && $("#dlHideEn").checked;
+    const hideZh = $("#dlHideZh") && $("#dlHideZh").checked;
+    list.innerHTML = m.turns.map((t, i) => {
+      const en = escapeHtml(t.pol || t.en || "");
+      const zh = escapeHtml(t.zh || "");
+      const raw = t.en && t.pol && t.en !== t.pol ? `<div class="dl-raw">原：${escapeHtml(t.en)}</div>` : "";
+      return `<div class="dl-turn" data-i="${i}">
+        <div class="dl-sp">${escapeHtml(t.sp || "")}</div>
+        <div class="dl-en${hideEn ? " blur" : ""}">${en}</div>
+        ${zh ? `<div class="dl-zh${hideZh ? " blur" : ""}">${zh}</div>` : ""}
+        ${raw}
+        <div class="dl-acts">
+          <button class="btn ghost small" data-dl-au="${i}">▶️ 原音</button>
+          <button class="btn ghost small" data-dl-say="${i}">🔊 范读</button>
+          <button class="btn ghost small" data-dl-add="${i}">＋ 生词本</button>
+        </div>
+      </div>`;
+    }).join("");
+  }
+  const dlListEl = $("#dlList");
+  if (dlListEl) dlListEl.addEventListener("click", (e) => {
+    const m = dlCurrentMeeting(); if (!m) return;
+    const au = e.target.closest("[data-dl-au]");
+    if (au) { const t = m.turns[Number(au.dataset.dlAu)]; if (t) dlPlayRange(t.s, t.e); return; }
+    const say = e.target.closest("[data-dl-say]");
+    if (say) { const t = m.turns[Number(say.dataset.dlSay)]; if (t) speak(t.pol || t.en); return; }
+    const add = e.target.closest("[data-dl-add]");
+    if (add) {
+      const t = m.turns[Number(add.dataset.dlAdd)]; if (!t) return;
+      const front = t.pol || t.en;
+      if (!state.cards.some((c) => (c.front || "") === front && c.category === "生词本")) {
+        state.cards.push({ id: uid(), front, back: t.zh || "", example: t.en || "", category: "生词本",
+          reps: 0, ease: 2.5, interval: 0, due: Date.now(), lapses: 0, correct: 0, seen: 0 });
+        save();
+        add.textContent = "✓ 已加入"; add.disabled = true;
+      }
+      return;
+    }
+  });
+  const dlHideEnEl = $("#dlHideEn"); if (dlHideEnEl) dlHideEnEl.addEventListener("change", renderDialogues);
+  const dlHideZhEl = $("#dlHideZh"); if (dlHideZhEl) dlHideZhEl.addEventListener("change", renderDialogues);
+  const dlStopEl = $("#dlStop"); if (dlStopEl) dlStopEl.addEventListener("click", dlStopAudio);
+  const dlPlayAllEl = $("#dlPlayAll");
+  if (dlPlayAllEl) dlPlayAllEl.addEventListener("click", () => {
+    const m = dlCurrentMeeting(); if (!m || !m.turns.length) return;
+    const a = dlAudioEl(); if (!a) return;
+    dlEnsureAudioSrc(m);
+    dlState.playingAll = true;
+    const first = m.turns[0];
+    const start = () => { try { a.currentTime = first.s; a.play(); } catch (_) {} };
+    if (a.readyState >= 1) start(); else { a.addEventListener("loadedmetadata", start, { once: true }); try { a.load(); } catch (_) {} }
+    bumpDaily("listen");
   });
 
   /* ---------------------------------------------------------------- grammar */

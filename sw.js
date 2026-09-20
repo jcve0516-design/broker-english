@@ -7,7 +7,7 @@
  *    need to be re-downloaded every release (which previously caused "阅读为空"
  *    whenever a bump landed while the network was flaky/offline).
  */
-const SHELL = "vt-shell-v42";
+const SHELL = "vt-shell-v43";
 const DATA = "vt-data-v1";
 const SHELL_ASSETS = [
   "./",
@@ -16,6 +16,7 @@ const SHELL_ASSETS = [
   "./app.js",
   "./grammar.js",
   "./phrases.js",
+  "./dialogues.js",
   "./samples.js",
   "./manifest.webmanifest",
   "./icons/icon-192.png",
@@ -23,7 +24,7 @@ const SHELL_ASSETS = [
   "./icons/apple-touch-icon.png",
 ];
 // Large, slow-changing data files kept in the persistent DATA cache.
-const isData = (url) => /\/corpus\.js(\?|$)/.test(url);
+const isData = (url) => /\/corpus\.js(\?|$)/.test(url) || /\/audio\/.*\.(m4a|mp3|opus|aac)(\?|$)/.test(url);
 
 self.addEventListener("install", (e) => {
   e.waitUntil(caches.open(SHELL).then((c) => c.addAll(SHELL_ASSETS)).then(() => self.skipWaiting()));
