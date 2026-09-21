@@ -1084,6 +1084,7 @@ code { background: var(--soft); padding: 1px 6px; border-radius: 6px; font-size:
         <p class="muted">来自真实英语会议的对话，Whisper 精准转写 + 润色 + 中文对照。每句可听<b>原音</b>（真人）或<b>范读</b>（清晰跟读），逐句练会议交流表达。</p>
         <div class="import-actions read-picker">
           <select id="dlMeetingSel" class="mini-select" title="选择会议"></select>
+          <select id="dlTopicSel" class="mini-select" title="话题分类"></select>
           <span class="rd-count muted" id="dlCount"></span>
         </div>
         <div class="speed-row" id="dlBar">
@@ -4069,7 +4070,8 @@ window.VOCAB_SAMPLES = [{"id":"brokerage-core","name":"券商IT高频术语表",
   /* --------------------------------------------------------------- dialogue */
   // Real-meeting dialogues (window.RULE_DIALOGUES). Each turn: {sp,en,pol,zh,s,e}.
   const DIALOGUES = (window.RULE_DIALOGUES && Array.isArray(window.RULE_DIALOGUES.meetings)) ? window.RULE_DIALOGUES.meetings : [];
-  const dlState = { mi: 0, inited: false, playingAll: false, stopAt: 0 };
+  const DL_PAGE = 15;
+  const dlState = { mi: 0, inited: false, playingAll: false, stopAt: 0, topic: "__all__", page: 0 };
   function dlAudioEl() { return $("#dlAudio"); }
   function dlCurrentMeeting() { return DIALOGUES[dlState.mi] || null; }
   function dlEnsureAudioSrc(m) {
@@ -4097,7 +4099,9 @@ window.VOCAB_SAMPLES = [{"id":"brokerage-core","name":"券商IT高频术语表",
     if (!sel || dlState.inited) return;
     if (!DIALOGUES.length) { sel.innerHTML = "<option>（暂无对话，稍后更新）</option>"; return; }
     sel.innerHTML = DIALOGUES.map((m, i) => `<option value="${i}">${escapeHtml(m.title || m.id)}</option>`).join("");
-    sel.addEventListener("change", (e) => { dlStopAudio(); dlState.mi = Number(e.target.value) || 0; renderDialogues(); });
+    sel.addEventListener("change", (e) => { dlStopAudio(); dlState.mi = Number(e.target.value) || 0; dlState.topic = "__all__"; dlState.page = 0; renderDialogues(); });
+    const tsel = $("#dlTopicSel");
+    if (tsel) tsel.addEventListener("change", (e) => { dlState.topic = e.target.value; dlState.page = 0; renderDialogues(); });
     // one shared audio time-guard: stop when a turn's end is reached (unless continuous play)
     const a = dlAudioEl();
     if (a) a.addEventListener("timeupdate", () => {
@@ -4105,31 +4109,55 @@ window.VOCAB_SAMPLES = [{"id":"brokerage-core","name":"券商IT高频术语表",
     });
     dlState.inited = true;
   }
+  function dlFillTopics(m) {
+    const tsel = $("#dlTopicSel"); if (!tsel) return;
+    const counts = {};
+    m.turns.forEach((t) => { if (t.tp) counts[t.tp] = (counts[t.tp] || 0) + 1; });
+    const keys = Object.keys(counts);
+    if (!keys.length) { tsel.style.display = "none"; return; }
+    tsel.style.display = "";
+    tsel.innerHTML = `<option value="__all__">全部话题（${m.turns.length}）</option>` +
+      keys.map((k) => `<option value="${escapeHtml(k)}"${k === dlState.topic ? " selected" : ""}>${escapeHtml(k)}（${counts[k]}）</option>`).join("");
+    if (dlState.topic !== "__all__" && !counts[dlState.topic]) dlState.topic = "__all__";
+    tsel.value = dlState.topic;
+  }
   function renderDialogues() {
     const list = $("#dlList"); if (!list) return;
     dlInitMeetings();
     const m = dlCurrentMeeting();
     const cnt = $("#dlCount");
-    if (!m) { list.innerHTML = `<div class="muted" style="padding:12px">对话内容正在制作中，稍后更新。</div>`; if (cnt) cnt.textContent = ""; return; }
-    if (cnt) cnt.textContent = `${m.turns.length} 句`;
+    if (!m) { list.innerHTML = `<div class="muted" style="padding:12px">对话内容正在制作中，稍后更新。</div>`; if (cnt) cnt.textContent = ""; $("#dlPager").innerHTML = ""; const ts = $("#dlTopicSel"); if (ts) ts.style.display = "none"; return; }
+    dlFillTopics(m);
+    const all = m.turns.map((t, gi) => ({ t, gi }));
+    const items = dlState.topic === "__all__" ? all : all.filter((x) => x.t.tp === dlState.topic);
+    const pages = Math.max(1, Math.ceil(items.length / DL_PAGE));
+    if (dlState.page >= pages) dlState.page = 0;
+    if (cnt) cnt.textContent = `${items.length} 句${dlState.topic === "__all__" ? "" : " · " + dlState.topic}`;
     const hideEn = $("#dlHideEn") && $("#dlHideEn").checked;
     const hideZh = $("#dlHideZh") && $("#dlHideZh").checked;
-    list.innerHTML = m.turns.map((t, i) => {
+    const start = dlState.page * DL_PAGE;
+    list.innerHTML = items.slice(start, start + DL_PAGE).map(({ t, gi }) => {
       const en = escapeHtml(t.pol || t.en || "");
       const zh = escapeHtml(t.zh || "");
       const raw = t.en && t.pol && t.en !== t.pol ? `<div class="dl-raw">原：${escapeHtml(t.en)}</div>` : "";
-      return `<div class="dl-turn" data-i="${i}">
-        <div class="dl-sp">${escapeHtml(t.sp || "")}</div>
+      const tag = t.tp ? `<span class="ph-tag">${escapeHtml(t.tp)}</span>` : "";
+      return `<div class="dl-turn" data-i="${gi}">
+        <div class="dl-sp">${escapeHtml(t.sp || "")}${tag}</div>
         <div class="dl-en${hideEn ? " blur" : ""}">${en}</div>
         ${zh ? `<div class="dl-zh${hideZh ? " blur" : ""}">${zh}</div>` : ""}
         ${raw}
         <div class="dl-acts">
-          <button class="btn ghost small" data-dl-au="${i}">▶️ 原音</button>
-          <button class="btn ghost small" data-dl-say="${i}">🔊 范读</button>
-          <button class="btn ghost small" data-dl-add="${i}">＋ 生词本</button>
+          <button class="btn ghost small" data-dl-au="${gi}">▶️ 原音</button>
+          <button class="btn ghost small" data-dl-say="${gi}">🔊 范读</button>
+          <button class="btn ghost small" data-dl-add="${gi}">＋ 生词本</button>
         </div>
       </div>`;
     }).join("");
+    $("#dlPager").innerHTML = pages > 1
+      ? `<button class="btn ghost small" data-dlpg="prev" ${dlState.page === 0 ? "disabled" : ""}>← 上一页</button>` +
+        `<span class="rd-pageinfo">${dlState.page + 1} / ${pages}</span>` +
+        `<button class="btn ghost small" data-dlpg="next" ${dlState.page >= pages - 1 ? "disabled" : ""}>下一页 →</button>`
+      : "";
   }
   const dlListEl = $("#dlList");
   if (dlListEl) dlListEl.addEventListener("click", (e) => {
@@ -4150,6 +4178,13 @@ window.VOCAB_SAMPLES = [{"id":"brokerage-core","name":"券商IT高频术语表",
       }
       return;
     }
+  });
+  const dlPagerEl = $("#dlPager");
+  if (dlPagerEl) dlPagerEl.addEventListener("click", (e) => {
+    const b = e.target.closest("[data-dlpg]"); if (!b) return;
+    if (b.dataset.dlpg === "prev" && dlState.page > 0) dlState.page--;
+    else if (b.dataset.dlpg === "next") dlState.page++;
+    renderDialogues();
   });
   const dlHideEnEl = $("#dlHideEn"); if (dlHideEnEl) dlHideEnEl.addEventListener("change", renderDialogues);
   const dlHideZhEl = $("#dlHideZh"); if (dlHideZhEl) dlHideZhEl.addEventListener("change", renderDialogues);

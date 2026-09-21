@@ -7,7 +7,7 @@
  *    need to be re-downloaded every release (which previously caused "阅读为空"
  *    whenever a bump landed while the network was flaky/offline).
  */
-const SHELL = "vt-shell-v43";
+const SHELL = "vt-shell-v44";
 const DATA = "vt-data-v1";
 const SHELL_ASSETS = [
   "./",
